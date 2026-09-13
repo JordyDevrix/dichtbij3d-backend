@@ -702,3 +702,35 @@ class Message(
     @Column(name = "deleted_at")
     var deletedAt: Instant? = null,
 )
+
+/** A buyer asking the owner of a paid model for access. Payment happens between the two of them. */
+@Entity
+@Table(name = "model_purchase_requests")
+class ModelPurchaseRequest(
+    @Id @GeneratedValue @Column(columnDefinition = "uuid")
+    var id: UUID? = null,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "model_id")
+    var model: Model3d,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "buyer_id")
+    var buyer: User,
+
+    @Column(name = "conversation_id", columnDefinition = "uuid")
+    var conversationId: UUID? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    var status: PurchaseRequestStatus = PurchaseRequestStatus.PENDING,
+
+    @Column(columnDefinition = "text")
+    var message: String? = null,
+
+    @Column(name = "created_at", nullable = false)
+    var createdAt: Instant = Instant.now(),
+
+    @Column(name = "decided_at")
+    var decidedAt: Instant? = null,
+)

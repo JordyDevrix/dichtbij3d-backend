@@ -184,6 +184,27 @@ class ModelController(private val service: ModelService) {
     fun acquire(@PathVariable id: UUID, @AuthenticationPrincipal principal: AppPrincipal): MessageResponse =
         service.acquire(id, principal)
 
+    @PostMapping("/{id}/purchase")
+    fun requestPurchase(
+        @PathVariable id: UUID,
+        @RequestBody(required = false) body: PurchaseRequest?,
+        @AuthenticationPrincipal principal: AppPrincipal,
+    ): PurchaseResponse = service.requestPurchase(id, body ?: PurchaseRequest(), principal)
+
+    @PostMapping("/{id}/purchase-requests/{requestId}/grant")
+    fun grantPurchase(
+        @PathVariable id: UUID,
+        @PathVariable requestId: UUID,
+        @AuthenticationPrincipal principal: AppPrincipal,
+    ): MessageResponse = service.decidePurchase(id, requestId, true, principal)
+
+    @PostMapping("/{id}/purchase-requests/{requestId}/decline")
+    fun declinePurchase(
+        @PathVariable id: UUID,
+        @PathVariable requestId: UUID,
+        @AuthenticationPrincipal principal: AppPrincipal,
+    ): MessageResponse = service.decidePurchase(id, requestId, false, principal)
+
     @GetMapping("/{id}/files/{fileId}/download")
     fun download(
         @PathVariable id: UUID,

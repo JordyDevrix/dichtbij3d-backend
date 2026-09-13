@@ -161,6 +161,7 @@ class AdvertService(
             deadline = advert.deadline,
             viewCount = advert.viewCount,
             imageUrls = advert.images.sortedBy { it.sortOrder }.map { "/api/files/${it.objectKey}" },
+            imageKeys = advert.images.sortedBy { it.sortOrder }.map { it.objectKey },
             tags = advert.tags.map { mapper.tag(it, locale) }.sortedBy { it.label },
             author = mapper.publicUser(advert.author),
             acceptedBy = advert.acceptedBy?.let { mapper.publicUser(it) },
@@ -288,6 +289,9 @@ class AdvertService(
         val advert = advertRepository.findById(id).orElseThrow { ApiException.notFound("Advert") }
         if (advert.author.id != principal.id) throw ApiException.forbidden("Only the author can accept a helper")
         if (advert.status != AdvertStatus.OPEN) throw ApiException.badRequest("This advert is no longer open")
+        if (advert.type.isSale) {
+            throw ApiException.badRequest("Sale adverts are closed by accepting a bid or by marking them sold")
+        }
 
         val chosenId = helperId ?: reactionId?.let { rid ->
             reactionRepository.findById(rid).orElseThrow { ApiException.notFound("Reaction") }.author.id
@@ -339,7 +343,8 @@ class AdvertService(
                 advert = advert,
                 author = author,
                 body = request.body.trim(),
-                isApplication = request.isApplication,
+                // "I want this job" only exists on requests; on a sale advert every reaction is a question.
+                isApplication = request.isApplication && advert.type.isRequest,
             )
         )
         advert.reactionCount = reactionRepository.countByAdvertIdAndDeletedAtIsNull(id).toInt()
@@ -382,6 +387,44 @@ class AdvertService(
                 link = "/advert/$advertId",
             )
         }
+    }
+
+    // ------------------------------------------------------------- buying
+
+    /**
+     * Buy-now intent on a sale advert. There is no payment provider yet, so - like Marktplaats -
+     * the platform introduces buyer and seller in a private thread and lets them settle it there.
+     */
+    @Transactional
+    fun buy(id: UUID, request: PurchaseRequest, principal: AppPrincipal): PurchaseResponse {
+        val advert = advertRepository.findById(id).orElseThrow { ApiException.notFound("Advert") }
+        if (advert.deletedAt != null) throw ApiException.badRequest("This advert is no longer available")
+        if (!isVisibleTo(advert, principal)) throw ApiException.forbidden()
+        if (!advert.type.isSale) throw ApiException.badRequest("This advert is not for sale")
+        if (advert.status != AdvertStatus.OPEN) throw ApiException.badRequest("This advert is no longer available")
+        if (advert.author.id == principal.id) throw ApiException.badRequest("You cannot buy your own advert")
+        val price = advert.priceCents
+            ?: throw ApiException.badRequest("This advert has no fixed price; place a bid instead")
+
+        val buyer = userRepository.findById(principal.id).orElseThrow { ApiException.notFound("User") }
+        val amount = "%.2f".format(price / 100.0)
+
+        val conversation = chat.openForAdvert(
+            advert = advert,
+            peer = advert.author,
+            opener = buyer,
+            systemLine = "${buyer.displayName} wants to buy \"${advert.title}\" for $amount ${advert.currency}.",
+        )
+        request.message?.trim()?.takeIf { it.isNotEmpty() }?.let { chat.sendAs(conversation, buyer, it) }
+
+        notifications.push(
+            userId = advert.author.id!!,
+            type = NotificationType.ADVERT_PURCHASE_REQUEST,
+            title = "${buyer.displayName} wants to buy \"${advert.title}\"",
+            body = "Agree on the details in your messages, then mark the advert as sold.",
+            link = "/advert/${advert.id}",
+        )
+        return PurchaseResponse(conversation.id!!, "The seller has been notified")
     }
 
     // ------------------------------------------------------------- bids

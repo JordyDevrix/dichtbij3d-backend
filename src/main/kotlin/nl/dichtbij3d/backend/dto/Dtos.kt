@@ -197,6 +197,8 @@ data class AdvertDetailDto(
     val deadline: LocalDate?,
     val viewCount: Int,
     val imageUrls: List<String>,
+    /** Storage keys behind [imageUrls], so the edit form can resubmit the images it keeps. */
+    val imageKeys: List<String>,
     val tags: List<TagDto>,
     val author: PublicUserDto,
     val acceptedBy: PublicUserDto?,
@@ -223,6 +225,16 @@ data class ReactionDto(
     val author: PublicUserDto,
     val createdAt: Instant,
     val canDelete: Boolean,
+)
+
+data class PurchaseRequest(
+    @field:Size(max = 1000) val message: String? = null,
+)
+
+/** Result of a buy-now intent: the buyer is handed the chat thread with the seller. */
+data class PurchaseResponse(
+    val conversationId: UUID,
+    val message: String,
 )
 
 data class BidCreateRequest(
@@ -283,6 +295,19 @@ data class ModelSummaryDto(
 data class ModelDetailDto(
     val model: ModelSummaryDto,
     val files: List<ModelFileDto>,
+    /** Pending/handled buyers, only filled in for the owner of a paid model. */
+    val purchaseRequests: List<ModelPurchaseRequestDto> = emptyList(),
+    /** Where the viewer's own request stands, if they asked for access. */
+    val myPurchaseStatus: PurchaseRequestStatus? = null,
+)
+
+data class ModelPurchaseRequestDto(
+    val id: UUID,
+    val buyer: PublicUserDto,
+    val status: PurchaseRequestStatus,
+    val message: String?,
+    val conversationId: UUID?,
+    val createdAt: Instant,
 )
 
 data class ModelFileDto(

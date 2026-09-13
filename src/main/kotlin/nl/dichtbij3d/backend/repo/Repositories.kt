@@ -267,3 +267,9 @@ interface MessageRepository : JpaRepository<Message, UUID> {
     )
     fun countUnreadForUser(@Param("userId") userId: UUID, @Param("epoch") epoch: Instant): Long
 }
+
+interface ModelPurchaseRequestRepository : JpaRepository<ModelPurchaseRequest, UUID> {
+    fun findByModelIdAndBuyerId(modelId: UUID, buyerId: UUID): ModelPurchaseRequest?
+
+    fun findAllByModelIdOrderByCreatedAtDesc(modelId: UUID): List<ModelPurchaseRequest>
+}

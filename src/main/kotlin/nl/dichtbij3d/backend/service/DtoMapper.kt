@@ -100,6 +100,15 @@ class DtoMapper(
         createdAt = bid.createdAt,
     )
 
+    fun modelPurchaseRequest(request: ModelPurchaseRequest): ModelPurchaseRequestDto = ModelPurchaseRequestDto(
+        id = request.id!!,
+        buyer = publicUser(request.buyer),
+        status = request.status,
+        message = request.message,
+        conversationId = request.conversationId,
+        createdAt = request.createdAt,
+    )
+
     fun modelSummary(model: Model3d, hasAccess: Boolean): ModelSummaryDto = ModelSummaryDto(
         id = model.id!!,
         title = model.title,

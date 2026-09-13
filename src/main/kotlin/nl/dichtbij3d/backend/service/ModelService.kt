@@ -5,11 +5,14 @@ import nl.dichtbij3d.backend.domain.Model3d
 import nl.dichtbij3d.backend.domain.ModelEntitlement
 import nl.dichtbij3d.backend.domain.ModelFile
 import nl.dichtbij3d.backend.domain.ModelVisibility
+import nl.dichtbij3d.backend.domain.ModelPurchaseRequest
 import nl.dichtbij3d.backend.domain.NotificationType
+import nl.dichtbij3d.backend.domain.PurchaseRequestStatus
 import nl.dichtbij3d.backend.dto.*
 import nl.dichtbij3d.backend.repo.Model3dRepository
 import nl.dichtbij3d.backend.repo.ModelEntitlementRepository
 import nl.dichtbij3d.backend.repo.ModelFileRepository
+import nl.dichtbij3d.backend.repo.ModelPurchaseRequestRepository
 import nl.dichtbij3d.backend.repo.UserRepository
 import nl.dichtbij3d.backend.security.AppPrincipal
 import nl.dichtbij3d.backend.web.ApiException
@@ -26,8 +29,10 @@ class ModelService(
     private val modelRepository: Model3dRepository,
     private val fileRepository: ModelFileRepository,
     private val entitlementRepository: ModelEntitlementRepository,
+    private val purchaseRepository: ModelPurchaseRequestRepository,
     private val userRepository: UserRepository,
     private val notifications: NotificationService,
+    private val chat: ChatService,
     private val storage: StorageService,
     private val mapper: DtoMapper,
 ) {
@@ -52,9 +57,18 @@ class ModelService(
             throw ApiException.forbidden("This model is private")
         }
         val access = hasAccess(model, viewer)
+        val isOwner = viewer != null && viewer.id == model.owner.id
         return ModelDetailDto(
             model = mapper.modelSummary(model, access),
             files = model.files.map { mapper.modelFile(it, access) },
+            purchaseRequests = if (isOwner) {
+                purchaseRepository.findAllByModelIdOrderByCreatedAtDesc(id).map { mapper.modelPurchaseRequest(it) }
+            } else {
+                emptyList()
+            },
+            myPurchaseStatus = viewer
+                ?.takeIf { !isOwner }
+                ?.let { purchaseRepository.findByModelIdAndBuyerId(id, it.id)?.status },
         )
     }
 
@@ -95,7 +109,7 @@ class ModelService(
         modelRepository.save(model)
     }
 
-    /** Free models grant access instantly; paid models are "purchased" (payment provider is out of scope). */
+    /** Free models grant access instantly. Paid models must be handed over by their owner. */
     @Transactional
     fun acquire(id: UUID, principal: AppPrincipal): MessageResponse {
         val model = modelRepository.findById(id).orElseThrow { ApiException.notFound("Model") }
@@ -104,21 +118,92 @@ class ModelService(
         if (entitlementRepository.existsByModelIdAndUserId(id, principal.id)) {
             return MessageResponse("You already have access to this model")
         }
+        if (model.priceCents > 0) {
+            throw ApiException.badRequest("This model is for sale; ask the owner for access first")
+        }
         entitlementRepository.save(
-            ModelEntitlement(
-                modelId = id,
-                userId = principal.id,
-                source = if (model.isFree) EntitlementSource.SHARE else EntitlementSource.PURCHASE,
-            )
+            ModelEntitlement(modelId = id, userId = principal.id, source = EntitlementSource.SHARE)
         )
         notifications.push(
             userId = model.owner.id!!,
             type = NotificationType.MODEL_PURCHASED,
-            title = if (model.isFree) "Someone downloaded \"${model.title}\"" else "\"${model.title}\" was purchased",
+            title = "Someone downloaded \"${model.title}\"",
             body = principal.displayName,
             link = "/model/$id",
         )
-        return MessageResponse(if (model.isFree) "Model added to your library" else "Purchase completed")
+        return MessageResponse("Model added to your library")
+    }
+
+    /**
+     * Asks the owner of a paid model for access. No payment provider is wired up yet, so the
+     * two settle it in a private thread and the owner grants access afterwards. Access is never
+     * handed out automatically.
+     */
+    @Transactional
+    fun requestPurchase(id: UUID, request: PurchaseRequest, principal: AppPrincipal): PurchaseResponse {
+        val model = modelRepository.findById(id).orElseThrow { ApiException.notFound("Model") }
+        if (model.deletedAt != null) throw ApiException.notFound("Model")
+        if (model.visibility == ModelVisibility.PRIVATE) throw ApiException.forbidden("This model is private")
+        if (model.owner.id == principal.id) throw ApiException.badRequest("You already own this model")
+        if (model.priceCents <= 0) throw ApiException.badRequest("This model is free; add it to your library instead")
+        if (entitlementRepository.existsByModelIdAndUserId(id, principal.id)) {
+            throw ApiException.badRequest("You already have access to this model")
+        }
+
+        val buyer = userRepository.findById(principal.id).orElseThrow { ApiException.notFound("User") }
+        val note = request.message?.trim()?.takeIf { it.isNotEmpty() }
+        val amount = "%.2f".format(model.priceCents / 100.0)
+        val conversation = chat.openDirect(
+            peer = model.owner,
+            opener = buyer,
+            systemLine = "${buyer.displayName} wants to buy the model \"${model.title}\" for $amount ${model.currency}.",
+        )
+        note?.let { chat.sendAs(conversation, buyer, it) }
+
+        val existing = purchaseRepository.findByModelIdAndBuyerId(id, principal.id)
+        val purchase = existing ?: ModelPurchaseRequest(model = model, buyer = buyer)
+        purchase.status = PurchaseRequestStatus.PENDING
+        purchase.message = note
+        purchase.conversationId = conversation.id
+        purchase.decidedAt = null
+        purchaseRepository.save(purchase)
+
+        notifications.push(
+            userId = model.owner.id!!,
+            type = NotificationType.MODEL_PURCHASE_REQUEST,
+            title = "${buyer.displayName} wants to buy \"${model.title}\"",
+            body = "Agree on the payment in your messages, then give them access.",
+            link = "/model/$id",
+        )
+        return PurchaseResponse(conversation.id!!, "The owner has been notified")
+    }
+
+    /** The owner hands over (or refuses) access after a purchase was settled. */
+    @Transactional
+    fun decidePurchase(id: UUID, requestId: UUID, grant: Boolean, principal: AppPrincipal): MessageResponse {
+        val model = modelRepository.findById(id).orElseThrow { ApiException.notFound("Model") }
+        if (model.owner.id != principal.id) throw ApiException.forbidden("Only the owner can give access")
+        val purchase = purchaseRepository.findById(requestId).orElseThrow { ApiException.notFound("Request") }
+        if (purchase.model.id != id) throw ApiException.badRequest("Request does not belong to this model")
+
+        purchase.status = if (grant) PurchaseRequestStatus.GRANTED else PurchaseRequestStatus.DECLINED
+        purchase.decidedAt = Instant.now()
+        purchaseRepository.save(purchase)
+
+        val buyerId = purchase.buyer.id!!
+        if (grant && !entitlementRepository.existsByModelIdAndUserId(id, buyerId)) {
+            entitlementRepository.save(
+                ModelEntitlement(modelId = id, userId = buyerId, source = EntitlementSource.PURCHASE)
+            )
+        }
+        notifications.push(
+            userId = buyerId,
+            type = if (grant) NotificationType.MODEL_ACCESS_GRANTED else NotificationType.MODEL_PURCHASE_DECLINED,
+            title = if (grant) "You now have access to \"${model.title}\"" else "\"${model.title}\" was not released",
+            body = if (grant) "The files are ready in your library." else "${model.owner.displayName} declined the request.",
+            link = "/model/$id",
+        )
+        return MessageResponse(if (grant) "Access granted" else "Request declined")
     }
 
     @Transactional

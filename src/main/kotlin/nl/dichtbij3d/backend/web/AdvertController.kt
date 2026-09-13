@@ -147,6 +147,13 @@ class AdvertController(private val advertService: AdvertService) {
         return MessageResponse("Reaction removed")
     }
 
+    @PostMapping("/{id}/buy")
+    fun buy(
+        @PathVariable id: UUID,
+        @RequestBody(required = false) body: PurchaseRequest?,
+        @AuthenticationPrincipal principal: AppPrincipal,
+    ): PurchaseResponse = advertService.buy(id, body ?: PurchaseRequest(), principal)
+
     // ------------------------------------------------------------ bids
 
     @PostMapping("/{id}/bids")

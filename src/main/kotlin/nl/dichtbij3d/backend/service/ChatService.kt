@@ -112,6 +112,19 @@ class ChatService(
         return conversation
     }
 
+    /** Opens the plain direct thread (not tied to an advert) and drops in a system line. */
+    @Transactional
+    fun openDirect(peer: User, opener: User, systemLine: String): Conversation {
+        val conversation = findOrCreate(opener, peer, null)
+        post(conversation, opener, systemLine, MessageKind.SYSTEM, notify = false)
+        return conversation
+    }
+
+    /** Posts a normal message on behalf of a participant, from another service. */
+    @Transactional
+    fun sendAs(conversation: Conversation, sender: User, body: String): Message =
+        post(conversation, sender, body, MessageKind.TEXT)
+
     // ------------------------------------------------------------- helpers
 
     private fun require(id: UUID, principal: AppPrincipal): Conversation {

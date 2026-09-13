@@ -43,6 +43,8 @@ enum class ModelVisibility { PUBLIC, UNLISTED, PRIVATE }
 
 enum class ModelLicense { CC0, CC_BY, CC_BY_NC, CC_BY_SA, COMMERCIAL, ALL_RIGHTS_RESERVED }
 
+enum class PurchaseRequestStatus { PENDING, GRANTED, DECLINED }
+
 enum class EntitlementSource { PURCHASE, SHARE, OWNER }
 
 enum class NotificationType {
@@ -50,9 +52,13 @@ enum class NotificationType {
     ADVERT_ACCEPTED,
     ADVERT_REMOVED,
     BID_PLACED,
+    ADVERT_PURCHASE_REQUEST,
     BID_ACCEPTED,
     BID_REJECTED,
     MODEL_PURCHASED,
+    MODEL_PURCHASE_REQUEST,
+    MODEL_ACCESS_GRANTED,
+    MODEL_PURCHASE_DECLINED,
     MODEL_SHARED,
     MESSAGE_RECEIVED,
     ACCOUNT_DISABLED,
