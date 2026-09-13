@@ -108,9 +108,10 @@ class DataInitializer(
                 license = ModelLicense.CC_BY_NC,
                 priceCents = 450,
                 visibility = ModelVisibility.PUBLIC,
+                category = Category.GARDEN_OUTDOOR,
             )
         )
-        modelRepository.save(
+        val clipModel = modelRepository.save(
             Model3d(
                 owner = lieke,
                 title = "Kabelgoot clip set (6 maten)",
@@ -118,12 +119,14 @@ class DataInitializer(
                 license = ModelLicense.CC0,
                 priceCents = 0,
                 visibility = ModelVisibility.PUBLIC,
+                category = Category.HOME_LIVING,
             )
         )
 
         fun advert(
             author: User,
             type: AdvertType,
+            category: Category,
             title: String,
             description: String,
             daysAgo: Long,
@@ -142,6 +145,7 @@ class DataInitializer(
                 Advert(
                     author = author,
                     type = type,
+                    category = category,
                     title = title,
                     description = description,
                     priceCents = priceCents,
@@ -161,7 +165,7 @@ class DataInitializer(
 
         advert(
             sanne, AdvertType.PRINT_REQUEST,
-            "Prototype behuizing voor sensor gezocht",
+            Category.ELECTRONICS_CASES, "Prototype behuizing voor sensor gezocht",
             "Voor mijn startup heb ik een behuizing nodig voor een kleine sensor (60x40x25 mm). " +
                 "Ik heb al een STEP-bestand. Graag geprint in PETG, zwart. Het gaat om 3 stuks voor een " +
                 "eerste testronde. Grote B2B-partijen vragen hier belachelijke bedragen voor, dus ik zoek " +
@@ -171,7 +175,7 @@ class DataInitializer(
         )
         advert(
             sanne, AdvertType.MODEL_REQUEST,
-            "Modelleur gezocht voor ergonomische handgreep",
+            Category.TOOLS_WORKSHOP, "Modelleur gezocht voor ergonomische handgreep",
             "Ik zoek iemand die een ergonomische handgreep kan modelleren op basis van schetsen en " +
                 "een paar foto's. Het model moet printbaar zijn zonder supports en parametrisch opgezet, " +
                 "zodat we later de maat kunnen aanpassen.",
@@ -180,7 +184,7 @@ class DataInitializer(
         )
         advert(
             bram, AdvertType.PRINT_FOR_SALE,
-            "Set van 4 geprinte planthangers (PETG)",
+            Category.GARDEN_OUTDOOR, "Set van 4 geprinte planthangers (PETG)",
             "Zelf ontworpen en geprint in PETG, UV-bestendig. Geschikt voor binnen en buiten. " +
                 "Kleur naar keuze: zwart, wit, terracotta. Ophalen in Eindhoven of verzenden voor 4,95.",
             daysAgo = 2, views = 210, priceCents = 1750,
@@ -188,7 +192,7 @@ class DataInitializer(
         )
         advert(
             tom, AdvertType.PRINT_FOR_SALE,
-            "Grote drakensculptuur - 38 cm, bieden vanaf 25 euro",
+            Category.ART_DECOR, "Grote drakensculptuur - 38 cm, bieden vanaf 25 euro",
             "Indrukwekkende drakensculptuur, geprint in meerdere delen en netjes afgewerkt en " +
                 "geschilderd. Hoogte 38 cm. Bieden mag, hoogste bod krijgt 'm.",
             daysAgo = 5, views = 486, allowBidding = true, priceCents = 2500,
@@ -196,7 +200,7 @@ class DataInitializer(
         )
         advert(
             tom, AdvertType.MODEL_FOR_SALE,
-            "Zelfwaterende plantenpot - STL + 3MF",
+            Category.GARDEN_OUTDOOR, "Zelfwaterende plantenpot - STL + 3MF",
             "Parametrische plantenpot met ingebouwd waterreservoir. Print zonder supports. " +
                 "Bestanden voor 3 formaten inbegrepen.",
             daysAgo = 7, views = 342, priceCents = 450,
@@ -204,15 +208,15 @@ class DataInitializer(
         )
         advert(
             lieke, AdvertType.MODEL_FOR_SALE,
-            "Kabelgoot clips - gratis download",
+            Category.HOME_LIVING, "Kabelgoot clips - gratis download",
             "Set van zes clips in verschillende maten om kabels weg te werken. Gratis te downloaden, " +
                 "een review wordt gewaardeerd.",
             daysAgo = 9, views = 901, priceCents = 0,
-            tagSet = tagsOf("modeller", "functioneel", "fdm"),
+            tagSet = tagsOf("modeller", "functioneel", "fdm"), model = clipModel,
         )
         advert(
             bram, AdvertType.PRINT_REQUEST,
-            "Reserveonderdeel vaatwasser - wielsteun",
+            Category.SPARE_PARTS_REPAIR, "Reserveonderdeel vaatwasser - wielsteun",
             "Het wieltje van het onderste rek van mijn vaatwasser is gebroken. Ik heb foto's en " +
                 "afmetingen. Zoek iemand die dit kan natekenen en printen in iets stevigs.",
             daysAgo = 4, views = 155, budgetMin = 1000, budgetMax = 2500,
@@ -220,7 +224,7 @@ class DataInitializer(
         )
         advert(
             lieke, AdvertType.PRINT_REQUEST,
-            "Resin print gezocht voor miniatuur (32 mm schaal)",
+            Category.TABLETOP_MINIATURES, "Resin print gezocht voor miniatuur (32 mm schaal)",
             "Ik heb een eigen ontwerp voor een 32 mm miniatuur en zoek iemand met een resin printer " +
                 "voor 10 exemplaren. Detail is belangrijker dan snelheid.",
             daysAgo = 6, views = 233, budgetMin = 2000, budgetMax = 5000,

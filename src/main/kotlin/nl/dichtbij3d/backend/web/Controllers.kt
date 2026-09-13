@@ -2,6 +2,7 @@ package nl.dichtbij3d.backend.web
 
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
+import nl.dichtbij3d.backend.domain.Category
 import nl.dichtbij3d.backend.dto.*
 import nl.dichtbij3d.backend.repo.TagRepository
 import nl.dichtbij3d.backend.repo.UserRepository
@@ -26,6 +27,7 @@ import java.util.UUID
 class UserController(
     private val userRepository: UserRepository,
     private val storage: StorageService,
+    private val blockService: BlockService,
     private val mapper: DtoMapper,
 ) {
 
@@ -75,12 +77,32 @@ class UserController(
         return mapper.profile(userRepository.save(user))
     }
 
+    @GetMapping("/blocks")
+    fun blocks(@AuthenticationPrincipal principal: AppPrincipal): List<BlockedUserDto> = blockService.list(principal)
+
     @GetMapping("/{id}")
-    fun publicProfile(@PathVariable id: UUID): PublicUserDto {
+    fun publicProfile(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal principal: AppPrincipal?,
+    ): PublicUserDto {
         val user = userRepository.findById(id).orElseThrow { ApiException.notFound("User") }
         if (user.deletedAt != null) throw ApiException.notFound("User")
-        return mapper.publicUser(user)
+        val blocked = principal != null && blockService.hasBlocked(principal.id, id)
+        return mapper.publicUser(user).copy(blocked = blocked)
     }
+
+    @PostMapping("/{id}/block")
+    fun block(
+        @PathVariable id: UUID,
+        @RequestBody(required = false) body: BlockRequest?,
+        @AuthenticationPrincipal principal: AppPrincipal,
+    ): MessageResponse = blockService.block(id, body?.reason, principal)
+
+    @DeleteMapping("/{id}/block")
+    fun unblock(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal principal: AppPrincipal,
+    ): MessageResponse = blockService.unblock(id, principal)
 }
 
 // ---------------------------------------------------------------- tags
@@ -153,10 +175,11 @@ class ModelController(private val service: ModelService) {
     @GetMapping
     fun browse(
         @RequestParam(required = false) q: String?,
+        @RequestParam(required = false) category: List<Category>?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int,
         @AuthenticationPrincipal principal: AppPrincipal?,
-    ): PageResponse<ModelSummaryDto> = service.browse(q, page, size, principal)
+    ): PageResponse<ModelSummaryDto> = service.browse(q, category.orEmpty(), page, size, principal)
 
     @GetMapping("/mine")
     fun mine(@AuthenticationPrincipal principal: AppPrincipal): List<ModelSummaryDto> = service.mine(principal)

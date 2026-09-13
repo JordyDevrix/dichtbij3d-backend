@@ -2,6 +2,7 @@ package nl.dichtbij3d.backend.web
 
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
+import nl.dichtbij3d.backend.domain.Category
 import nl.dichtbij3d.backend.domain.AdvertStatus
 import nl.dichtbij3d.backend.domain.AdvertType
 import nl.dichtbij3d.backend.dto.*
@@ -25,6 +26,7 @@ class AdvertController(private val advertService: AdvertService) {
         @RequestParam(required = false) type: List<AdvertType>?,
         @RequestParam(required = false) tag: List<String>?,
         @RequestParam(required = false) status: List<AdvertStatus>?,
+        @RequestParam(required = false) category: List<Category>?,
         @RequestParam(required = false) minPrice: Int?,
         @RequestParam(required = false) maxPrice: Int?,
         @RequestParam(required = false) city: String?,
@@ -41,6 +43,7 @@ class AdvertController(private val advertService: AdvertService) {
         AdvertFilter(
             query = q,
             types = type.orEmpty(),
+            categories = category.orEmpty(),
             tags = tag.orEmpty(),
             statuses = status.orEmpty(),
             minPriceCents = minPrice,

@@ -97,6 +97,8 @@ data class PublicUserDto(
     val city: String?,
     val bio: String? = null,
     val memberSince: Instant? = null,
+    /** Whether the person looking at this profile has blocked them. */
+    val blocked: Boolean = false,
 )
 
 data class UpdateProfileRequest(
@@ -126,6 +128,7 @@ data class TagDto(
 
 data class AdvertCreateRequest(
     val type: AdvertType,
+    val category: Category = Category.OTHER,
     @field:NotBlank @field:Size(min = 4, max = 140) val title: String,
     @field:NotBlank @field:Size(min = 10, max = 8000) val description: String,
     @field:PositiveOrZero val priceCents: Int? = null,
@@ -142,6 +145,7 @@ data class AdvertCreateRequest(
 )
 
 data class AdvertUpdateRequest(
+    val category: Category? = null,
     @field:Size(min = 4, max = 140) val title: String? = null,
     @field:Size(min = 10, max = 8000) val description: String? = null,
     val priceCents: Int? = null,
@@ -160,6 +164,7 @@ data class AdvertUpdateRequest(
 data class AdvertSummaryDto(
     val id: UUID,
     val type: AdvertType,
+    val category: Category,
     val title: String,
     val excerpt: String,
     val status: AdvertStatus,
@@ -183,6 +188,7 @@ data class AdvertSummaryDto(
 data class AdvertDetailDto(
     val id: UUID,
     val type: AdvertType,
+    val category: Category,
     val title: String,
     val description: String,
     val status: AdvertStatus,
@@ -262,11 +268,19 @@ data class ViewPingRequest(val dwellMillis: Long = 0)
 data class ModelCreateRequest(
     @field:NotBlank @field:Size(min = 3, max = 140) val title: String,
     @field:Size(max = 8000) val description: String? = null,
+    val category: Category = Category.OTHER,
     val license: ModelLicense = ModelLicense.CC_BY_NC,
     @field:PositiveOrZero val priceCents: Int = 0,
     val visibility: ModelVisibility = ModelVisibility.PUBLIC,
     val thumbnailKey: String? = null,
     val files: List<ModelFileRef> = emptyList(),
+    /**
+     * Also put this model on the marketplace as a "model for sale" advert, so uploading
+     * a model and offering it are a single step instead of two disconnected ones.
+     */
+    val listOnMarketplace: Boolean = false,
+    @field:Size(max = 60) val city: String? = null,
+    val tags: List<String> = emptyList(),
 )
 
 data class ModelFileRef(
@@ -279,6 +293,7 @@ data class ModelFileRef(
 data class ModelSummaryDto(
     val id: UUID,
     val title: String,
+    val category: Category,
     val description: String?,
     val license: ModelLicense,
     val priceCents: Int,
@@ -299,6 +314,16 @@ data class ModelDetailDto(
     val purchaseRequests: List<ModelPurchaseRequestDto> = emptyList(),
     /** Where the viewer's own request stands, if they asked for access. */
     val myPurchaseStatus: PurchaseRequestStatus? = null,
+)
+
+data class BlockedUserDto(
+    val user: PublicUserDto,
+    val reason: String?,
+    val createdAt: Instant,
+)
+
+data class BlockRequest(
+    @field:Size(max = 500) val reason: String? = null,
 )
 
 data class ModelPurchaseRequestDto(

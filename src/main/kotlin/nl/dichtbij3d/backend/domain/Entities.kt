@@ -242,6 +242,10 @@ class Model3d(
     @Column(nullable = false, length = 20)
     var visibility: ModelVisibility = ModelVisibility.PUBLIC,
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 40)
+    var category: Category = Category.OTHER,
+
     @Column(name = "thumbnail_key")
     var thumbnailKey: String? = null,
 
@@ -326,6 +330,10 @@ class Advert(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     var type: AdvertType,
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 40)
+    var category: Category = Category.OTHER,
 
     @Column(nullable = false, length = 140)
     var title: String,
@@ -733,4 +741,27 @@ class ModelPurchaseRequest(
 
     @Column(name = "decided_at")
     var decidedAt: Instant? = null,
+)
+
+
+/** One person muting another: no chats, no adverts, no reactions in either direction. */
+@Entity
+@Table(name = "user_blocks")
+class UserBlock(
+    @Id @GeneratedValue @Column(columnDefinition = "uuid")
+    var id: UUID? = null,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "blocker_id")
+    var blocker: User,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "blocked_id")
+    var blocked: User,
+
+    @Column(columnDefinition = "text")
+    var reason: String? = null,
+
+    @Column(name = "created_at", nullable = false)
+    var createdAt: Instant = Instant.now(),
 )

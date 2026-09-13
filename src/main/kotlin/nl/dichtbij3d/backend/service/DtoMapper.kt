@@ -61,6 +61,7 @@ class DtoMapper(
     fun advertSummary(advert: Advert, locale: String, highestBid: Int? = null): AdvertSummaryDto = AdvertSummaryDto(
         id = advert.id!!,
         type = advert.type,
+        category = advert.category,
         title = advert.title,
         excerpt = advert.description.take(200),
         status = advert.status,
@@ -113,6 +114,7 @@ class DtoMapper(
         id = model.id!!,
         title = model.title,
         description = model.description,
+        category = model.category,
         license = model.license,
         priceCents = model.priceCents,
         currency = model.currency,

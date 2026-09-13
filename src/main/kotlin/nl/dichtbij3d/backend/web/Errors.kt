@@ -15,10 +15,13 @@ class ApiException(
     val status: HttpStatus,
     override val message: String,
     val code: String = status.name.lowercase(),
+    /** Per-field messages, so a form can mark the input that needs attention. */
+    val fieldErrors: Map<String, String>? = null,
 ) : RuntimeException(message) {
     companion object {
         fun notFound(what: String) = ApiException(HttpStatus.NOT_FOUND, "$what not found", "not_found")
-        fun badRequest(message: String) = ApiException(HttpStatus.BAD_REQUEST, message, "bad_request")
+        fun badRequest(message: String, fieldErrors: Map<String, String>? = null) =
+            ApiException(HttpStatus.BAD_REQUEST, message, "bad_request", fieldErrors)
         fun forbidden(message: String = "You are not allowed to do this") =
             ApiException(HttpStatus.FORBIDDEN, message, "forbidden")
 
@@ -46,7 +49,7 @@ class GlobalExceptionHandler {
     @ExceptionHandler(ApiException::class)
     fun handleApi(ex: ApiException, request: HttpServletRequest): ResponseEntity<ApiError> =
         ResponseEntity.status(ex.status).body(
-            ApiError(Instant.now(), ex.status.value(), ex.code, ex.message, request.requestURI)
+            ApiError(Instant.now(), ex.status.value(), ex.code, ex.message, request.requestURI, ex.fieldErrors)
         )
 
     @ExceptionHandler(MethodArgumentNotValidException::class)

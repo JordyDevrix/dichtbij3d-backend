@@ -1,5 +1,7 @@
 package nl.dichtbij3d.backend.service
 
+import nl.dichtbij3d.backend.domain.AdvertType
+import nl.dichtbij3d.backend.domain.Category
 import nl.dichtbij3d.backend.domain.EntitlementSource
 import nl.dichtbij3d.backend.domain.Model3d
 import nl.dichtbij3d.backend.domain.ModelEntitlement
@@ -16,6 +18,7 @@ import nl.dichtbij3d.backend.repo.ModelPurchaseRequestRepository
 import nl.dichtbij3d.backend.repo.UserRepository
 import nl.dichtbij3d.backend.security.AppPrincipal
 import nl.dichtbij3d.backend.web.ApiException
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
@@ -33,14 +36,29 @@ class ModelService(
     private val userRepository: UserRepository,
     private val notifications: NotificationService,
     private val chat: ChatService,
+    private val blocks: BlockService,
+    private val adverts: ObjectProvider<AdvertService>,
     private val storage: StorageService,
     private val mapper: DtoMapper,
 ) {
 
     @Transactional(readOnly = true)
-    fun browse(query: String?, page: Int, size: Int, viewer: AppPrincipal?): PageResponse<ModelSummaryDto> {
+    fun browse(
+        query: String?,
+        categories: List<Category>,
+        page: Int,
+        size: Int,
+        viewer: AppPrincipal?,
+    ): PageResponse<ModelSummaryDto> {
         val pageable = PageRequest.of(page.coerceAtLeast(0), size.coerceIn(1, 60), Sort.by(Sort.Direction.DESC, "createdAt"))
-        val result = modelRepository.searchPublic(query?.takeIf { it.isNotBlank() }, pageable)
+        val q = query?.takeIf { it.isNotBlank() }
+        val result = modelRepository.searchPublic(
+            q = q,
+            categories = categories.ifEmpty { null },
+            queryCategories = q?.let { Category.matching(it) }?.ifEmpty { null },
+            hidden = blocks.hiddenFor(viewer).ifEmpty { null },
+            pageable = pageable,
+        )
         return PageResponse.of(result.map { mapper.modelSummary(it, hasAccess(it, viewer)) })
     }
 
@@ -83,6 +101,7 @@ class ModelService(
             license = request.license,
             priceCents = request.priceCents,
             visibility = request.visibility,
+            category = request.category,
             thumbnailKey = request.thumbnailKey,
         )
         request.files.forEachIndexed { index, ref ->
@@ -98,6 +117,27 @@ class ModelService(
             )
         }
         modelRepository.save(model)
+        // Uploading with "list on the marketplace" ticked saves the second trip through
+        // the advert form: the matching advert is created here and points at this model.
+        if (request.listOnMarketplace && request.visibility == ModelVisibility.PUBLIC) {
+            adverts.getObject().create(
+                AdvertCreateRequest(
+                    type = AdvertType.MODEL_FOR_SALE,
+                    category = request.category,
+                    title = model.title,
+                    description = request.description?.trim()?.ifBlank { null }
+                        ?: "3D model available for download.",
+                    priceCents = request.priceCents,
+                    allowBidding = false,
+                    city = request.city,
+                    modelId = model.id,
+                    tags = request.tags,
+                    imageKeys = listOfNotNull(request.thumbnailKey),
+                ),
+                principal,
+                owner.locale,
+            )
+        }
         return detail(model.id!!, principal)
     }
 

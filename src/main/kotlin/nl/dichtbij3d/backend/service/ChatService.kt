@@ -35,6 +35,7 @@ class ChatService(
     private val users: UserRepository,
     private val adverts: AdvertRepository,
     private val notifications: NotificationService,
+    private val blocks: BlockService,
     private val mapper: DtoMapper,
     private val storage: StorageService,
 ) {
@@ -70,6 +71,7 @@ class ChatService(
         val me = users.findById(principal.id).orElseThrow { ApiException.notFound("User") }
         val peer = users.findById(peerId).orElseThrow { ApiException.notFound("User") }
         if (peer.deletedAt != null || !peer.enabled) throw ApiException.badRequest("This user can no longer be reached")
+        if (blocks.isBlocked(principal.id, peerId)) throw ApiException.forbidden("You cannot message this person")
 
         // The advert is only a label on the thread, so an unknown or removed one
         // simply degrades to a plain direct chat instead of failing.
@@ -87,6 +89,7 @@ class ChatService(
         val me = users.findById(principal.id).orElseThrow { ApiException.notFound("User") }
         val peer = conversation.other(principal.id)
         if (peer.deletedAt != null || !peer.enabled) throw ApiException.badRequest("This user can no longer be reached")
+        if (blocks.isBlocked(principal.id, peer.id!!)) throw ApiException.forbidden("You cannot message this person")
         val message = post(conversation, me, request.body.trim(), MessageKind.TEXT)
         return toDto(message, principal.id)
     }

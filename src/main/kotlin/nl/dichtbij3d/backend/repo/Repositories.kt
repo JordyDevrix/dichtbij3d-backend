@@ -161,10 +161,21 @@ interface Model3dRepository : JpaRepository<Model3d, UUID>, JpaSpecificationExec
         """
         select m from Model3d m
         where m.deletedAt is null and m.visibility = 'PUBLIC'
-          and (:q is null or lower(m.title) like lower(concat('%', cast(:q as string), '%')))
+          and (:categories is null or m.category in :categories)
+          and (:q is null
+               or lower(m.title) like lower(concat('%', cast(:q as string), '%'))
+               or lower(coalesce(m.description, '')) like lower(concat('%', cast(:q as string), '%'))
+               or (:queryCategories is not null and m.category in :queryCategories))
+          and (:hidden is null or m.owner.id not in :hidden)
         """
     )
-    fun searchPublic(@Param("q") q: String?, pageable: Pageable): Page<Model3d>
+    fun searchPublic(
+        @Param("q") q: String?,
+        @Param("categories") categories: List<Category>?,
+        @Param("queryCategories") queryCategories: List<Category>?,
+        @Param("hidden") hidden: List<UUID>?,
+        pageable: Pageable,
+    ): Page<Model3d>
 }
 
 @Repository
@@ -272,4 +283,26 @@ interface ModelPurchaseRequestRepository : JpaRepository<ModelPurchaseRequest, U
     fun findByModelIdAndBuyerId(modelId: UUID, buyerId: UUID): ModelPurchaseRequest?
 
     fun findAllByModelIdOrderByCreatedAtDesc(modelId: UUID): List<ModelPurchaseRequest>
+}
+
+interface UserBlockRepository : JpaRepository<UserBlock, UUID> {
+    fun findByBlockerIdAndBlockedId(blockerId: UUID, blockedId: UUID): UserBlock?
+
+    fun findAllByBlockerIdOrderByCreatedAtDesc(blockerId: UUID): List<UserBlock>
+
+    @Query("select b.blocked.id from UserBlock b where b.blocker.id = :userId")
+    fun blockedIdsOf(@Param("userId") userId: UUID): List<UUID>
+
+    /** Everyone this person cannot interact with, in either direction. */
+    @Query(
+        """
+        select case when b.blocker.id = :userId then b.blocked.id else b.blocker.id end
+        from UserBlock b
+        where b.blocker.id = :userId or b.blocked.id = :userId
+        """
+    )
+    fun entangledIdsOf(@Param("userId") userId: UUID): List<UUID>
+
+    @Query("select count(b) > 0 from UserBlock b where (b.blocker.id = :a and b.blocked.id = :b) or (b.blocker.id = :b and b.blocked.id = :a)")
+    fun eitherWayBlocked(@Param("a") a: UUID, @Param("b") b: UUID): Boolean
 }

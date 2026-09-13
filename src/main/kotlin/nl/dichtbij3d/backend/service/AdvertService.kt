@@ -22,6 +22,7 @@ import java.util.UUID
 data class AdvertFilter(
     val query: String? = null,
     val types: List<AdvertType> = emptyList(),
+    val categories: List<Category> = emptyList(),
     val tags: List<String> = emptyList(),
     val statuses: List<AdvertStatus> = emptyList(),
     val minPriceCents: Int? = null,
@@ -46,8 +47,10 @@ class AdvertService(
     private val userRepository: UserRepository,
     private val modelRepository: Model3dRepository,
     private val entitlementRepository: ModelEntitlementRepository,
+    private val purchaseRepository: ModelPurchaseRequestRepository,
     private val notifications: NotificationService,
     private val chat: ChatService,
+    private val blocks: BlockService,
     private val auditLog: AuditLogRepository,
     private val mapper: DtoMapper,
     private val viewProps: ViewProperties,
@@ -98,13 +101,24 @@ class AdvertService(
 
             filter.query?.trim()?.takeIf { it.isNotBlank() }?.let { q ->
                 val like = "%${q.lowercase()}%"
-                predicates += cb.or(
+                val matches = mutableListOf<Predicate>(
                     cb.like(cb.lower(root.get("title")), like),
                     cb.like(cb.lower(root.get("description")), like),
                     cb.like(cb.lower(cb.coalesce(root.get("city"), "")), like),
                 )
+                // Searching for "homelab" or "speelgoed" should return the whole category,
+                // not only the adverts that happen to spell the word out.
+                Category.matching(q).takeIf { it.isNotEmpty() }?.let { categories ->
+                    matches += root.get<Category>("category").`in`(categories)
+                }
+                predicates += cb.or(*matches.toTypedArray())
             }
             if (filter.types.isNotEmpty()) predicates += root.get<AdvertType>("type").`in`(filter.types)
+            if (filter.categories.isNotEmpty()) predicates += root.get<Category>("category").`in`(filter.categories)
+            // Blocked in either direction means out of sight, unless it is your own advert.
+            blocks.hiddenFor(viewer).takeIf { it.isNotEmpty() }?.let { hidden ->
+                predicates += cb.not(root.get<User>("author").get<UUID>("id").`in`(hidden))
+            }
             if (filter.statuses.isNotEmpty()) predicates += root.get<AdvertStatus>("status").`in`(filter.statuses)
             if (filter.tags.isNotEmpty()) {
                 // Subquery instead of a join so pagination + count queries stay duplicate free.
@@ -147,6 +161,7 @@ class AdvertService(
         return AdvertDetailDto(
             id = advert.id!!,
             type = advert.type,
+            category = advert.category,
             title = advert.title,
             description = advert.description,
             status = advert.status,
@@ -173,7 +188,9 @@ class AdvertService(
                         (viewer.id == m.owner.id || entitlementRepository.existsByModelIdAndUserId(m.id!!, viewer.id))
                 )
             },
-            reactions = reactions.map { mapper.reaction(it, viewer) },
+            reactions = reactions
+                .filter { it.author.id !in blocks.hiddenFor(viewer) }
+                .map { mapper.reaction(it, viewer) },
             bids = bids.map(mapper::bid),
             highestBidCents = if (advert.allowBidding) bidRepository.highestBid(id) else null,
             canEdit = isOwner,
@@ -202,9 +219,23 @@ class AdvertService(
                 if (it.owner.id != principal.id) throw ApiException.forbidden("You can only attach your own models")
             }
         }
+        // A "model for sale" without a model is just a promise. Selling a model means
+        // handing over files, so the advert always carries the model it sells.
+        if (request.type == AdvertType.MODEL_FOR_SALE && model == null) {
+            throw ApiException.badRequest("Attach the 3D model you are selling", mapOf("modelId" to "Select or upload a model"))
+        }
+        model?.let {
+            // Advert and model must not disagree about price or category.
+            if (request.type == AdvertType.MODEL_FOR_SALE) {
+                it.priceCents = request.priceCents ?: it.priceCents
+                it.category = request.category
+                modelRepository.save(it)
+            }
+        }
         val advert = Advert(
             author = author,
             type = request.type,
+            category = request.category,
             title = request.title.trim(),
             description = request.description.trim(),
             priceCents = request.priceCents,
@@ -230,9 +261,18 @@ class AdvertService(
         val advert = advertRepository.findById(id).orElseThrow { ApiException.notFound("Advert") }
         if (advert.author.id != principal.id && !principal.isAdmin) throw ApiException.forbidden()
 
+        request.category?.let { category ->
+            advert.category = category
+            advert.model?.let { it.category = category; modelRepository.save(it) }
+        }
         request.title?.let { advert.title = it.trim() }
         request.description?.let { advert.description = it.trim() }
-        request.priceCents?.let { advert.priceCents = it }
+        request.priceCents?.let {
+            advert.priceCents = it
+            if (advert.type == AdvertType.MODEL_FOR_SALE) {
+                advert.model?.let { model -> model.priceCents = it; modelRepository.save(model) }
+            }
+        }
         request.allowBidding?.let { advert.allowBidding = it }
         request.budgetMinCents?.let { advert.budgetMinCents = it }
         request.budgetMaxCents?.let { advert.budgetMaxCents = it }
@@ -406,6 +446,9 @@ class AdvertService(
         val price = advert.priceCents
             ?: throw ApiException.badRequest("This advert has no fixed price; place a bid instead")
 
+        if (blocks.isBlocked(principal.id, advert.author.id!!)) {
+            throw ApiException.forbidden("You cannot buy from someone you blocked")
+        }
         val buyer = userRepository.findById(principal.id).orElseThrow { ApiException.notFound("User") }
         val amount = "%.2f".format(price / 100.0)
 
@@ -417,12 +460,33 @@ class AdvertService(
         )
         request.message?.trim()?.takeIf { it.isNotEmpty() }?.let { chat.sendAs(conversation, buyer, it) }
 
+        // A model advert sells files, so it uses the same purchase request as the model page:
+        // the owner hands over access once payment is settled, and the buyer's library fills up.
+        val model = advert.model
+        if (advert.type == AdvertType.MODEL_FOR_SALE && model != null) {
+            val purchase = purchaseRepository.findByModelIdAndBuyerId(model.id!!, principal.id)
+                ?: ModelPurchaseRequest(model = model, buyer = buyer)
+            purchase.status = PurchaseRequestStatus.PENDING
+            purchase.message = request.message?.trim()?.ifBlank { null }
+            purchase.conversationId = conversation.id
+            purchase.decidedAt = null
+            purchaseRepository.save(purchase)
+        }
+
         notifications.push(
             userId = advert.author.id!!,
             type = NotificationType.ADVERT_PURCHASE_REQUEST,
             title = "${buyer.displayName} wants to buy \"${advert.title}\"",
-            body = "Agree on the details in your messages, then mark the advert as sold.",
-            link = "/advert/${advert.id}",
+            body = if (advert.type == AdvertType.MODEL_FOR_SALE) {
+                "Agree on the payment in your messages, then give them access to the files."
+            } else {
+                "Agree on the details in your messages, then mark the advert as sold."
+            },
+            link = if (advert.type == AdvertType.MODEL_FOR_SALE && model != null) {
+                "/model/${model.id}"
+            } else {
+                "/advert/${advert.id}"
+            },
         )
         return PurchaseResponse(conversation.id!!, "The seller has been notified")
     }
