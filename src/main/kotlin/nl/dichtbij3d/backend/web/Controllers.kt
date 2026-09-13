@@ -272,6 +272,12 @@ class FileController(private val storage: StorageService) {
     ): UploadResponse {
         if (file.isEmpty) throw ApiException.badRequest("No file uploaded")
         val safeFolder = folder.filter { it.isLetterOrDigit() || it == '-' }.ifBlank { "uploads" }
+        if (safeFolder == "models") {
+            val originalName = file.originalFilename?.lowercase() ?: ""
+            if (!originalName.endsWith(".3mf") && !originalName.endsWith(".obj") && !originalName.endsWith(".stl")) {
+                throw ApiException.badRequest("Invalid file type. Only .3mf, .obj, and .stl files are allowed.")
+            }
+        }
         val stored = storage.store(file, safeFolder)
         return UploadResponse(stored.key, "/api/files/${stored.key}", stored.fileName, stored.size)
     }
