@@ -1,0 +1,100 @@
+server:
+  port: 8080
+  forward-headers-strategy: framework
+  error:
+    include-message: always
+
+spring:
+  application:
+    name: dichtbij3d-backend
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/dichtbij3d}
+    username: ${DB_USER:dichtbij3d}
+    password: ${DB_PASSWORD:dichtbij3d}
+    hikari:
+      maximum-pool-size: 15
+      pool-name: dichtbij3d-pool
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: 256MB
+      max-request-size: 256MB
+  threads:
+    virtual:
+      enabled: true
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    nl.dichtbij3d: INFO
+    org.springframework.security: WARN
+
+dichtbij3d:
+  jwt:
+    # Override in production: `export DICHTBIJ3D_JWT_SECRET=...` (>= 64 random chars)
+    secret: ${DICHTBIJ3D_JWT_SECRET:dev-only-insecure-secret-change-me-0123456789-abcdefghijklmnopqrstuvwxyz}
+    issuer: dichtbij3d
+    access-token-ttl: PT15M
+    refresh-token-ttl: P30D
+    mfa-challenge-ttl: PT5M
+  cors:
+    allowed-origins:
+      - http://localhost:8081
+      - http://localhost:19006
+      - http://localhost:3000
+      - http://127.0.0.1:8081
+  webauthn:
+    rp-id: ${WEBAUTHN_RP_ID:localhost}
+    rp-name: Dichtbij3D
+    origins:
+      - http://localhost:8081
+      - http://localhost:19006
+      - http://localhost:3000
+  storage:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:dichtbij3d}
+    secret-key: ${MINIO_SECRET_KEY:dichtbij3d-secret}
+    bucket: ${MINIO_BUCKET:dichtbij3d}
+    # When MinIO is unreachable the service transparently falls back to local disk storage.
+    fallback-directory: ${STORAGE_FALLBACK_DIR:./.storage}
+  views:
+    # A single viewer can only add one view per advert within this window.
+    dedup-window: PT12H
+    # Minimum dwell time (ms) the client must report before a view is counted.
+    min-dwell-millis: 1500
+  admin:
+    # Bootstrap admin, created on first startup if it does not exist yet.
+    email: ${ADMIN_EMAIL:admin@dichtbij3d.nl}
+    password: ${ADMIN_PASSWORD:Admin123!}
+  demo-data:
+    enabled: ${DEMO_DATA:true}

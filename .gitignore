@@ -1,0 +1,13 @@
+target/
+.storage/
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.kotlin/
+
+# local env
+*.local
+.env
