@@ -47,6 +47,7 @@ class AdvertService(
     private val modelRepository: Model3dRepository,
     private val entitlementRepository: ModelEntitlementRepository,
     private val notifications: NotificationService,
+    private val chat: ChatService,
     private val auditLog: AuditLogRepository,
     private val mapper: DtoMapper,
     private val viewProps: ViewProperties,
@@ -305,6 +306,13 @@ class AdvertService(
             body = "${advert.author.displayName} accepted you for this request.",
             link = "/advert/${advert.id}",
         )
+        // Both sides need a direct line now that they are working together.
+        chat.openForAdvert(
+            advert = advert,
+            peer = helper,
+            opener = advert.author,
+            systemLine = "${advert.author.displayName} accepted ${helper.displayName} for \"${advert.title}\".",
+        )
         return MessageResponse("Job accepted")
     }
 
@@ -408,6 +416,13 @@ class AdvertService(
             body = "${bidder.displayName} bid ${"%.2f".format(request.amountCents / 100.0)} EUR",
             link = "/advert/${advert.id}",
         )
+        chat.openForAdvert(
+            advert = advert,
+            peer = advert.author,
+            opener = bidder,
+            systemLine = "${bidder.displayName} bid ${"%.2f".format(request.amountCents / 100.0)} EUR on " +
+                "\"${advert.title}\".",
+        )
         return mapper.bid(bid)
     }
 
@@ -441,6 +456,15 @@ class AdvertService(
             body = advert.title,
             link = "/advert/$advertId",
         )
+        if (accept) {
+            chat.openForAdvert(
+                advert = advert,
+                peer = bid.bidder,
+                opener = advert.author,
+                systemLine = "${advert.author.displayName} accepted the bid of ${bid.bidder.displayName} on " +
+                    "\"${advert.title}\". Arrange the details here.",
+            )
+        }
         return MessageResponse(if (accept) "Bid accepted" else "Bid rejected")
     }
 

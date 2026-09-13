@@ -203,3 +203,67 @@ interface ReportRepository : JpaRepository<Report, UUID> {
 interface AuditLogRepository : JpaRepository<AuditLogEntry, UUID> {
     fun findAllByOrderByCreatedAtDesc(pageable: Pageable): Page<AuditLogEntry>
 }
+
+@Repository
+interface ConversationRepository : JpaRepository<Conversation, UUID> {
+
+    @Query(
+        """
+        select c from Conversation c
+        where (c.participantA.id = :userId or c.participantB.id = :userId)
+        order by c.lastMessageAt desc
+        """
+    )
+    fun findAllForUser(@Param("userId") userId: UUID, pageable: Pageable): Page<Conversation>
+
+    @Query(
+        """
+        select c from Conversation c
+        where c.participantA.id = :a and c.participantB.id = :b
+          and ((:advertId is null and c.advert is null) or c.advert.id = :advertId)
+        """
+    )
+    fun findPair(
+        @Param("a") a: UUID,
+        @Param("b") b: UUID,
+        @Param("advertId") advertId: UUID?,
+    ): Conversation?
+}
+
+@Repository
+interface MessageRepository : JpaRepository<Message, UUID> {
+
+    fun findAllByConversationIdAndDeletedAtIsNullOrderByCreatedAtDesc(
+        conversationId: UUID,
+        pageable: Pageable,
+    ): Page<Message>
+
+    @Query(
+        """
+        select count(m) from Message m
+        where m.conversation.id = :conversationId and m.deletedAt is null
+          and m.sender.id <> :userId and m.createdAt > :since
+        """
+    )
+    fun countUnread(
+        @Param("conversationId") conversationId: UUID,
+        @Param("userId") userId: UUID,
+        @Param("since") since: Instant,
+    ): Long
+
+    /** Total unread messages across every conversation the user takes part in. */
+    @Query(
+        """
+        select count(m) from Message m
+        where m.deletedAt is null and m.sender.id <> :userId
+          and (
+            (m.conversation.participantA.id = :userId
+              and m.createdAt > coalesce(m.conversation.aReadAt, :epoch))
+            or
+            (m.conversation.participantB.id = :userId
+              and m.createdAt > coalesce(m.conversation.bReadAt, :epoch))
+          )
+        """
+    )
+    fun countUnreadForUser(@Param("userId") userId: UUID, @Param("epoch") epoch: Instant): Long
+}

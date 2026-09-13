@@ -305,6 +305,45 @@ data class NotificationDto(
     val createdAt: Instant,
 )
 
+// ---------------------------------------------------------------- chat
+
+data class ConversationStartRequest(
+    val userId: UUID,
+    val advertId: UUID? = null,
+    @field:Size(max = 4000) val message: String? = null,
+)
+
+data class MessageCreateRequest(
+    @field:NotBlank @field:Size(min = 1, max = 4000) val body: String,
+)
+
+data class ConversationDto(
+    val id: UUID,
+    val peer: PublicUserDto,
+    val advert: ConversationAdvertDto?,
+    val lastMessage: String?,
+    val lastMessageAt: Instant,
+    val unreadCount: Long,
+    val createdAt: Instant,
+)
+
+data class ConversationAdvertDto(
+    val id: UUID,
+    val title: String,
+    val type: AdvertType,
+    val coverImageUrl: String?,
+)
+
+data class MessageDto(
+    val id: UUID,
+    val conversationId: UUID,
+    val body: String,
+    val kind: MessageKind,
+    val senderId: UUID,
+    val mine: Boolean,
+    val createdAt: Instant,
+)
+
 // ---------------------------------------------------------------- calculator
 
 data class PrinterModelDto(

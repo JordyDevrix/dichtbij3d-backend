@@ -628,3 +628,77 @@ class AuditLogEntry(
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
 )
+
+@Entity
+@Table(name = "conversations")
+class Conversation(
+    @Id @GeneratedValue @Column(columnDefinition = "uuid")
+    var id: UUID? = null,
+
+    /** Always the participant with the lowest UUID, so a pair maps to one row. */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "participant_a")
+    var participantA: User,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "participant_b")
+    var participantB: User,
+
+    /** The advert this thread is about, or null for a plain direct message. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "advert_id")
+    var advert: Advert? = null,
+
+    @Column(name = "last_message_at", nullable = false)
+    var lastMessageAt: Instant = Instant.now(),
+
+    @Column(name = "last_message", columnDefinition = "text")
+    var lastMessage: String? = null,
+
+    @Column(name = "a_read_at")
+    var aReadAt: Instant? = null,
+
+    @Column(name = "b_read_at")
+    var bReadAt: Instant? = null,
+
+    @Column(name = "created_at", nullable = false)
+    var createdAt: Instant = Instant.now(),
+) {
+    fun includes(userId: UUID) = participantA.id == userId || participantB.id == userId
+
+    fun other(userId: UUID): User = if (participantA.id == userId) participantB else participantA
+
+    fun readAtFor(userId: UUID): Instant? = if (participantA.id == userId) aReadAt else bReadAt
+
+    fun markRead(userId: UUID, now: Instant) {
+        if (participantA.id == userId) aReadAt = now else bReadAt = now
+    }
+}
+
+@Entity
+@Table(name = "messages")
+class Message(
+    @Id @GeneratedValue @Column(columnDefinition = "uuid")
+    var id: UUID? = null,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "conversation_id")
+    var conversation: Conversation,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "sender_id")
+    var sender: User,
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    var kind: MessageKind = MessageKind.TEXT,
+
+    @Column(nullable = false, columnDefinition = "text")
+    var body: String,
+
+    @Column(name = "created_at", nullable = false)
+    var createdAt: Instant = Instant.now(),
+
+    @Column(name = "deleted_at")
+    var deletedAt: Instant? = null,
+)

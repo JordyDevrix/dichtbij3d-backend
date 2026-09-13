@@ -1,0 +1,61 @@
+package nl.dichtbij3d.backend.web
+
+import jakarta.validation.Valid
+import nl.dichtbij3d.backend.dto.ConversationDto
+import nl.dichtbij3d.backend.dto.ConversationStartRequest
+import nl.dichtbij3d.backend.dto.MessageCreateRequest
+import nl.dichtbij3d.backend.dto.MessageDto
+import nl.dichtbij3d.backend.dto.MessageResponse
+import nl.dichtbij3d.backend.dto.PageResponse
+import nl.dichtbij3d.backend.security.AppPrincipal
+import nl.dichtbij3d.backend.service.ChatService
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.web.bind.annotation.*
+import java.util.UUID
+
+@RestController
+@RequestMapping("/api/conversations")
+class ChatController(private val service: ChatService) {
+
+    @GetMapping
+    fun list(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "30") size: Int,
+    ): PageResponse<ConversationDto> = service.list(principal, page, size)
+
+    @GetMapping("/unread-count")
+    fun unread(@AuthenticationPrincipal principal: AppPrincipal): Map<String, Long> =
+        mapOf("count" to service.unreadCount(principal))
+
+    @PostMapping
+    fun start(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @Valid @RequestBody request: ConversationStartRequest,
+    ): ConversationDto = service.start(principal, request.userId, request.advertId, request.message)
+
+    @GetMapping("/{id}")
+    fun detail(@AuthenticationPrincipal principal: AppPrincipal, @PathVariable id: UUID): ConversationDto =
+        service.detail(id, principal)
+
+    @GetMapping("/{id}/messages")
+    fun messages(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @PathVariable id: UUID,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "40") size: Int,
+    ): PageResponse<MessageDto> = service.messages(id, principal, page, size)
+
+    @PostMapping("/{id}/messages")
+    fun send(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @PathVariable id: UUID,
+        @Valid @RequestBody request: MessageCreateRequest,
+    ): MessageDto = service.send(id, principal, request)
+
+    @PostMapping("/{id}/read")
+    fun read(@AuthenticationPrincipal principal: AppPrincipal, @PathVariable id: UUID): MessageResponse {
+        service.markRead(id, principal)
+        return MessageResponse("ok")
+    }
+}

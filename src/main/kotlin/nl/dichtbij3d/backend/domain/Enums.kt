@@ -54,10 +54,14 @@ enum class NotificationType {
     BID_REJECTED,
     MODEL_PURCHASED,
     MODEL_SHARED,
+    MESSAGE_RECEIVED,
     ACCOUNT_DISABLED,
     ACCOUNT_ENABLED,
     SYSTEM
 }
+
+/** A normal chat message, or an automatic line the platform posts itself. */
+enum class MessageKind { TEXT, SYSTEM }
 
 enum class WebAuthnPurpose { REGISTRATION, AUTHENTICATION }
 
