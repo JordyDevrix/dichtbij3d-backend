@@ -68,18 +68,13 @@ dichtbij3d:
     refresh-token-ttl: P30D
     mfa-challenge-ttl: PT5M
   cors:
-    allowed-origins:
-      - http://localhost:8081
-      - http://localhost:19006
-      - http://localhost:3000
-      - http://127.0.0.1:8081
+    # Comma-separated list; override in production with the public site origin.
+    allowed-origins: ${CORS_ORIGINS:http://localhost:8081,http://localhost:19006,http://localhost:3000,http://127.0.0.1:8081}
   webauthn:
     rp-id: ${WEBAUTHN_RP_ID:localhost}
     rp-name: Dichtbij3D
-    origins:
-      - http://localhost:8081
-      - http://localhost:19006
-      - http://localhost:3000
+    # Must match the exact origin(s) the browser uses, scheme and port included.
+    origins: ${WEBAUTHN_ORIGINS:http://localhost:8081,http://localhost:19006,http://localhost:3000}
   storage:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:dichtbij3d}

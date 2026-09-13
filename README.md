@@ -126,3 +126,22 @@ If MinIO is unreachable the storage service transparently falls back to local di
 mvn clean package      # produces target/dichtbij3d-backend-*.jar
 java -jar target/dichtbij3d-backend-*.jar
 ```
+
+## Container image
+
+Every push to `main` and every `v*.*.*` tag publishes a multi-arch image to GHCR via
+`.github/workflows/release.yml`:
+
+```
+ghcr.io/jordydevrix/dichtbij3d-backend:latest
+ghcr.io/jordydevrix/dichtbij3d-backend:1.2.3
+ghcr.io/jordydevrix/dichtbij3d-backend:sha-<commit>
+```
+
+Build it yourself with `docker build -t dichtbij3d-backend .`.
+The image expects `DB_URL`, `DB_USER`, `DB_PASSWORD`, `MINIO_*`,
+`DICHTBIJ3D_JWT_SECRET`, `CORS_ORIGINS`, `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGINS` and
+`ADMIN_PASSWORD`, and exposes `8080` with a health check on `/actuator/health`.
+
+For a full stack (frontend + backend + Postgres + MinIO) use the deployment repository:
+<https://github.com/JordyDevrix/dichtbij3d>.
