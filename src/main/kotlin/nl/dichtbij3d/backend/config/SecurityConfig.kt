@@ -54,6 +54,7 @@ class SecurityConfig(
                 auth.requestMatchers(
                     "/api/auth/**",
                     "/api/public/**",
+                    "/api/share/**",
                     "/api/files/**",
                     "/actuator/health",
                     "/actuator/info",
