@@ -59,6 +59,14 @@ class DtoMapper(
         createdAt = user.createdAt,
     )
 
+    fun advertList(list: AdvertList): AdvertListDto = AdvertListDto(
+        id = list.id!!,
+        name = list.name,
+        isDefault = list.isDefault,
+        advertIds = list.items.map { it.advert.id!! },
+        createdAt = list.createdAt,
+    )
+
     fun advertSummary(advert: Advert, locale: String, highestBid: Int? = null): AdvertSummaryDto = AdvertSummaryDto(
         id = advert.id!!,
         type = advert.type,

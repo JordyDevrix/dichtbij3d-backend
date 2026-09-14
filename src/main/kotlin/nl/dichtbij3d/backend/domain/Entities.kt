@@ -771,3 +771,44 @@ class UserBlock(
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
 )
+
+@Entity
+@Table(name = "advert_lists")
+class AdvertList(
+    @Id @GeneratedValue @Column(columnDefinition = "uuid")
+    var id: UUID? = null,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id")
+    var user: User,
+
+    @Column(nullable = false, length = 100)
+    var name: String,
+
+    @Column(name = "is_default", nullable = false)
+    var isDefault: Boolean = false,
+
+    @Column(name = "created_at", nullable = false)
+    var createdAt: Instant = Instant.now(),
+
+    @OneToMany(mappedBy = "list", cascade = [CascadeType.ALL], orphanRemoval = true)
+    var items: MutableList<AdvertListItem> = mutableListOf(),
+)
+
+@Entity
+@Table(name = "advert_list_items")
+class AdvertListItem(
+    @Id @GeneratedValue @Column(columnDefinition = "uuid")
+    var id: UUID? = null,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "list_id")
+    var list: AdvertList,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "advert_id")
+    var advert: Advert,
+
+    @Column(name = "added_at", nullable = false)
+    var addedAt: Instant = Instant.now(),
+)

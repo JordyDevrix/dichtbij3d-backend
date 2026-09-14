@@ -541,3 +541,17 @@ data class PageResponse<T>(
 }
 
 data class MessageResponse(val message: String)
+
+// ---------------------------------------------------------------- lists
+
+data class AdvertListDto(
+    val id: UUID,
+    val name: String,
+    val isDefault: Boolean,
+    val advertIds: List<UUID>,
+    val createdAt: Instant,
+)
+
+data class AdvertListCreateRequest(
+    @field:NotBlank @field:Size(min = 1, max = 100) val name: String,
+)
