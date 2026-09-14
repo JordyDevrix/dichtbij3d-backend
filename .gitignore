@@ -11,3 +11,8 @@ target/
 # local env
 *.local
 .env
+# teamlead workspace isolation
+.teamlead/worktrees/
+.teamlead/.lock
+.teamlead/worktrees/**
+COLLABORATION.md

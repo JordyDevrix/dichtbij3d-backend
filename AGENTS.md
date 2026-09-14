@@ -1,16 +1,32 @@
-# Agent Instructions for dichtbij3d Backend
+# TeamLead Coordination System
 
-## Project Context
-This is a Java/Maven backend repository.
+This repository uses **teamlead** to coordinate multiple AI models, agents, and CLI tools simultaneously.
 
-## Commands
-- **Compile:** `mvn compile`
-- **Test:** `mvn test`
-- **Build/Package:** `mvn clean install`
-- **Run (Docker):** `docker-compose up` (if applicable)
+## Project Configuration
+- **Base Branch**: `main`
+- **Merge Strategy**: `squash`
+- **Worktree Directory**: `.teamlead/worktrees`
 
-## Agent Rules
-- Always run `mvn test` before concluding a task to ensure nothing is broken.
-- Follow the existing project structure (e.g., `src/main/java`, `src/test/java`).
-- Only modify `pom.xml` if explicitly requested to add/update dependencies or plugins.
-- Do not commit any changes without user permission.
+## CLI Quick Reference for AI Agents
+```bash
+# 1. Check current tasks and locks
+teamlead status
+teamlead task list
+teamlead lock list
+
+# 2. Claim your task and reserve files
+teamlead task claim T-1 --agent <YOUR_NAME>
+teamlead lock acquire src/feature/* --agent <YOUR_NAME>
+
+# 3. Check for conflicts before committing
+teamlead conflicts
+
+# 4. Complete task
+teamlead task complete T-1 --agent <YOUR_NAME>
+```
+
+## Current Tasks
+- *No tasks created yet.*
+
+## Active Locks
+- *No active locks.*
