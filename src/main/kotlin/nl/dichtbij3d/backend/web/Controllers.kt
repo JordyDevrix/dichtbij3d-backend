@@ -60,6 +60,7 @@ class UserController(
             if (keepAdmin) next.add(nl.dichtbij3d.backend.domain.Role.ADMIN)
             user.roles = next
         }
+        request.mutedNotifications?.let { user.mutedNotifications = it.toMutableSet() }
         return mapper.profile(userRepository.save(user))
     }
 

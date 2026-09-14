@@ -83,6 +83,7 @@ data class UserProfileDto(
     val city: String? = null,
     val locale: String? = null,
     val roles: Set<Role> = emptySet(),
+    val mutedNotifications: Set<NotificationType> = emptySet(),
     val enabled: Boolean = true,
     val totpEnabled: Boolean = false,
     val passkeyCount: Int = 0,
@@ -111,6 +112,7 @@ data class UpdateProfileRequest(
     @field:Size(max = 120) val city: String? = null,
     val locale: String? = null,
     val roles: Set<Role>? = null,
+    val mutedNotifications: Set<NotificationType>? = null,
 )
 
 // ---------------------------------------------------------------- tags

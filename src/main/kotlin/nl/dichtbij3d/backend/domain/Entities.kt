@@ -72,6 +72,12 @@ class User(
     @Enumerated(EnumType.STRING)
     var roles: MutableSet<Role> = mutableSetOf(Role.CUSTOMER),
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "user_muted_notifications", joinColumns = [JoinColumn(name = "user_id")])
+    @Column(name = "notification_type", nullable = false, length = 40)
+    @Enumerated(EnumType.STRING)
+    var mutedNotifications: MutableSet<NotificationType> = mutableSetOf(),
+
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
 

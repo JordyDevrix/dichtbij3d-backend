@@ -5,6 +5,7 @@ import nl.dichtbij3d.backend.domain.NotificationType
 import nl.dichtbij3d.backend.dto.NotificationDto
 import nl.dichtbij3d.backend.dto.PageResponse
 import nl.dichtbij3d.backend.repo.NotificationRepository
+import nl.dichtbij3d.backend.repo.UserRepository
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -14,11 +15,15 @@ import java.util.UUID
 @Service
 class NotificationService(
     private val repository: NotificationRepository,
+    private val userRepository: UserRepository,
     private val mapper: DtoMapper,
 ) {
 
     @Transactional
     fun push(userId: UUID, type: NotificationType, title: String, body: String? = null, link: String? = null) {
+        val user = userRepository.findById(userId).orElse(null) ?: return
+        if (user.mutedNotifications.contains(type)) return
+
         repository.save(
             Notification(
                 userId = userId,

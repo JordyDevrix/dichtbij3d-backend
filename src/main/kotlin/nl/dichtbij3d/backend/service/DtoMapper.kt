@@ -52,6 +52,7 @@ class DtoMapper(
         city = user.city,
         locale = user.locale,
         roles = user.roles.toSet(),
+        mutedNotifications = user.mutedNotifications.toSet(),
         enabled = user.enabled,
         totpEnabled = user.totpEnabled,
         passkeyCount = passkeyRepository.countByUserId(user.id!!).toInt(),
