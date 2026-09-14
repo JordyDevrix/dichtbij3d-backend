@@ -157,6 +157,7 @@ data class AdvertUpdateRequest(
     val postalCode: String? = null,
     val deadline: LocalDate? = null,
     val status: AdvertStatus? = null,
+    val modelId: UUID? = null,
     val tags: List<String>? = null,
     val imageKeys: List<String>? = null,
 )
@@ -210,6 +211,8 @@ data class AdvertDetailDto(
     val acceptedBy: PublicUserDto?,
     val acceptedAt: Instant?,
     val model: ModelSummaryDto?,
+    /** The attached model was removed by its owner, so there are no files to sell anymore. */
+    val modelRemoved: Boolean = false,
     val reactions: List<ReactionDto>,
     val bids: List<BidDto>,
     val highestBidCents: Int?,

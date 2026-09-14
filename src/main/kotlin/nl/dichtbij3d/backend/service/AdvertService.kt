@@ -181,13 +181,16 @@ class AdvertService(
             author = mapper.publicUser(advert.author),
             acceptedBy = advert.acceptedBy?.let { mapper.publicUser(it) },
             acceptedAt = advert.acceptedAt,
-            model = advert.model?.let { m ->
+            // A deleted model is not shown as if it were still for sale; the advert
+            // survives but says out loud that the files are gone.
+            model = advert.model?.takeIf { it.deletedAt == null }?.let { m ->
                 mapper.modelSummary(
                     m,
                     hasAccess = viewer != null &&
                         (viewer.id == m.owner.id || entitlementRepository.existsByModelIdAndUserId(m.id!!, viewer.id))
                 )
             },
+            modelRemoved = advert.model?.deletedAt != null,
             reactions = reactions
                 .filter { it.author.id !in blocks.hiddenFor(viewer) }
                 .map { mapper.reaction(it, viewer) },
@@ -217,6 +220,7 @@ class AdvertService(
         val model = request.modelId?.let { id ->
             modelRepository.findById(id).orElseThrow { ApiException.notFound("Model") }.also {
                 if (it.owner.id != principal.id) throw ApiException.forbidden("You can only attach your own models")
+                if (it.deletedAt != null) throw ApiException.badRequest("That model no longer exists")
             }
         }
         // A "model for sale" without a model is just a promise. Selling a model means
@@ -263,14 +267,16 @@ class AdvertService(
 
         request.category?.let { category ->
             advert.category = category
-            advert.model?.let { it.category = category; modelRepository.save(it) }
+            advert.model?.takeIf { it.deletedAt == null }?.let { it.category = category; modelRepository.save(it) }
         }
         request.title?.let { advert.title = it.trim() }
         request.description?.let { advert.description = it.trim() }
         request.priceCents?.let {
             advert.priceCents = it
             if (advert.type == AdvertType.MODEL_FOR_SALE) {
-                advert.model?.let { model -> model.priceCents = it; modelRepository.save(model) }
+                advert.model
+                    ?.takeIf { model -> model.deletedAt == null }
+                    ?.let { model -> model.priceCents = it; modelRepository.save(model) }
             }
         }
         request.allowBidding?.let { advert.allowBidding = it }
@@ -281,6 +287,20 @@ class AdvertService(
         request.postalCode?.let { advert.postalCode = it.trim().ifBlank { null } }
         request.deadline?.let { advert.deadline = it }
         request.status?.let { advert.status = it }
+        // Swapping in another model is how an advert recovers after its model was removed.
+        request.modelId?.let { modelId ->
+            val replacement = modelRepository.findById(modelId).orElseThrow { ApiException.notFound("Model") }
+            if (replacement.owner.id != advert.author.id) {
+                throw ApiException.forbidden("You can only attach your own models")
+            }
+            if (replacement.deletedAt != null) throw ApiException.badRequest("That model no longer exists")
+            advert.model = replacement
+            if (advert.type == AdvertType.MODEL_FOR_SALE) {
+                replacement.category = advert.category
+                advert.priceCents?.let { replacement.priceCents = it }
+                modelRepository.save(replacement)
+            }
+        }
         request.tags?.let { advert.tags = resolveTags(it).toMutableSet() }
         request.imageKeys?.let { keys ->
             advert.images.clear()
@@ -443,6 +463,9 @@ class AdvertService(
         if (!advert.type.isSale) throw ApiException.badRequest("This advert is not for sale")
         if (advert.status != AdvertStatus.OPEN) throw ApiException.badRequest("This advert is no longer available")
         if (advert.author.id == principal.id) throw ApiException.badRequest("You cannot buy your own advert")
+        if (advert.type == AdvertType.MODEL_FOR_SALE && advert.model?.deletedAt != null) {
+            throw ApiException.badRequest("The seller removed this model, so it can no longer be bought")
+        }
         val price = advert.priceCents
             ?: throw ApiException.badRequest("This advert has no fixed price; place a bid instead")
 

@@ -99,6 +99,8 @@ interface AdvertRepository : JpaRepository<Advert, UUID>, JpaSpecificationExecut
 
     fun findAllByAuthorIdAndDeletedAtIsNullOrderByCreatedAtDesc(authorId: UUID, pageable: Pageable): Page<Advert>
 
+    fun findAllByModelIdAndDeletedAtIsNull(modelId: UUID): List<Advert>
+
     @Query(
         """
         select a.type as type, count(a) as total from Advert a

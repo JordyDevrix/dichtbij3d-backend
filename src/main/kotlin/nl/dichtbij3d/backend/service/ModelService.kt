@@ -1,5 +1,6 @@
 package nl.dichtbij3d.backend.service
 
+import nl.dichtbij3d.backend.domain.AdvertStatus
 import nl.dichtbij3d.backend.domain.AdvertType
 import nl.dichtbij3d.backend.domain.Category
 import nl.dichtbij3d.backend.domain.EntitlementSource
@@ -11,6 +12,7 @@ import nl.dichtbij3d.backend.domain.ModelPurchaseRequest
 import nl.dichtbij3d.backend.domain.NotificationType
 import nl.dichtbij3d.backend.domain.PurchaseRequestStatus
 import nl.dichtbij3d.backend.dto.*
+import nl.dichtbij3d.backend.repo.AdvertRepository
 import nl.dichtbij3d.backend.repo.Model3dRepository
 import nl.dichtbij3d.backend.repo.ModelEntitlementRepository
 import nl.dichtbij3d.backend.repo.ModelFileRepository
@@ -33,6 +35,7 @@ class ModelService(
     private val fileRepository: ModelFileRepository,
     private val entitlementRepository: ModelEntitlementRepository,
     private val purchaseRepository: ModelPurchaseRequestRepository,
+    private val advertRepository: AdvertRepository,
     private val userRepository: UserRepository,
     private val notifications: NotificationService,
     private val chat: ChatService,
@@ -147,6 +150,20 @@ class ModelService(
         if (model.owner.id != principal.id && !principal.isAdmin) throw ApiException.forbidden()
         model.deletedAt = Instant.now()
         modelRepository.save(model)
+
+        // Adverts selling this model stay up (they carry the conversation history),
+        // but their owner is told that they no longer have files behind them.
+        advertRepository.findAllByModelIdAndDeletedAtIsNull(id).forEach { advert ->
+            if (advert.status == AdvertStatus.OPEN && advert.type == AdvertType.MODEL_FOR_SALE) {
+                notifications.push(
+                    userId = advert.author.id!!,
+                    type = NotificationType.SYSTEM,
+                    title = "\"${advert.title}\" no longer has a model attached",
+                    body = "You removed \"${model.title}\". Attach another model or close the advert.",
+                    link = "/advert/${advert.id}",
+                )
+            }
+        }
     }
 
     /** Free models grant access instantly. Paid models must be handed over by their owner. */
