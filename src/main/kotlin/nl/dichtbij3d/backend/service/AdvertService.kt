@@ -175,8 +175,10 @@ class AdvertService(
             postalCode = advert.postalCode,
             deadline = advert.deadline,
             viewCount = advert.viewCount,
-            imageUrls = advert.images.sortedBy { it.sortOrder }.map { "/api/files/${it.objectKey}" },
-            imageKeys = advert.images.sortedBy { it.sortOrder }.map { it.objectKey },
+            imageUrls = advert.images.sortedBy { it.sortOrder }.map { "/api/files/${it.objectKey}" }
+                .ifEmpty { listOfNotNull(advert.model?.thumbnailKey?.let { "/api/files/$it" }) },
+            imageKeys = advert.images.sortedBy { it.sortOrder }.map { it.objectKey }
+                .ifEmpty { listOfNotNull(advert.model?.thumbnailKey) },
             tags = advert.tags.map { mapper.tag(it, locale) }.sortedBy { it.label },
             author = mapper.publicUser(advert.author),
             acceptedBy = advert.acceptedBy?.let { mapper.publicUser(it) },
@@ -253,7 +255,12 @@ class AdvertService(
             model = model,
             tags = resolveTags(request.tags).toMutableSet(),
         )
-        request.imageKeys.forEachIndexed { index, key ->
+        val initialImageKeys = if (request.imageKeys.isEmpty() && model?.thumbnailKey != null) {
+            listOf(model.thumbnailKey!!)
+        } else {
+            request.imageKeys
+        }
+        initialImageKeys.forEachIndexed { index, key ->
             advert.images.add(AdvertImage(advert = advert, objectKey = key, sortOrder = index))
         }
         advertRepository.save(advert)

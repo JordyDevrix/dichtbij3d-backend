@@ -275,8 +275,11 @@ class FileController(private val storage: StorageService) {
         val safeFolder = folder.filter { it.isLetterOrDigit() || it == '-' }.ifBlank { "uploads" }
         if (safeFolder == "models") {
             val originalName = file.originalFilename?.lowercase() ?: ""
-            if (!originalName.endsWith(".3mf") && !originalName.endsWith(".obj") && !originalName.endsWith(".stl")) {
-                throw ApiException.badRequest("Invalid file type. Only .3mf, .obj, and .stl files are allowed.")
+            val isModel = originalName.endsWith(".3mf") || originalName.endsWith(".obj") || originalName.endsWith(".stl")
+            val isImage = originalName.endsWith(".png") || originalName.endsWith(".jpg") || originalName.endsWith(".jpeg") ||
+                originalName.endsWith(".webp") || originalName.endsWith(".gif") || originalName.endsWith(".heic") || originalName.endsWith(".heif")
+            if (!isModel && !isImage) {
+                throw ApiException.badRequest("Invalid file type. Only .3mf, .obj, .stl and image files are allowed.")
             }
         }
         val stored = storage.store(file, safeFolder)
@@ -295,6 +298,8 @@ class FileController(private val storage: StorageService) {
             "gif" -> MediaType.IMAGE_GIF
             "webp" -> MediaType.parseMediaType("image/webp")
             "svg" -> MediaType.parseMediaType("image/svg+xml")
+            "heic" -> MediaType.parseMediaType("image/heic")
+            "heif" -> MediaType.parseMediaType("image/heif")
             else -> MediaType.APPLICATION_OCTET_STREAM
         }
         return ResponseEntity.ok()

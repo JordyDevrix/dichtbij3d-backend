@@ -85,7 +85,10 @@ class DtoMapper(
         viewCount = advert.viewCount,
         reactionCount = advert.reactionCount,
         bidCount = advert.bidCount,
-        coverImageUrl = storage.publicUrl(advert.images.minByOrNull { it.sortOrder }?.objectKey),
+        coverImageUrl = storage.publicUrl(
+            advert.images.minByOrNull { it.sortOrder }?.objectKey
+                ?: advert.model?.thumbnailKey
+        ),
         tags = advert.tags.map { tag(it, locale) }.sortedBy { it.label },
         author = publicUser(advert.author),
         createdAt = advert.createdAt,
