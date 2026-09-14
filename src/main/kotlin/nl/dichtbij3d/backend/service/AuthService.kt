@@ -1,10 +1,13 @@
 package nl.dichtbij3d.backend.service
 
 import jakarta.servlet.http.HttpServletRequest
+import nl.dichtbij3d.backend.config.MailProperties
+import nl.dichtbij3d.backend.domain.PasswordResetToken
 import nl.dichtbij3d.backend.domain.RefreshToken
 import nl.dichtbij3d.backend.domain.Role
 import nl.dichtbij3d.backend.domain.User
 import nl.dichtbij3d.backend.dto.*
+import nl.dichtbij3d.backend.repo.PasswordResetTokenRepository
 import nl.dichtbij3d.backend.repo.RefreshTokenRepository
 import nl.dichtbij3d.backend.repo.UserRepository
 import nl.dichtbij3d.backend.security.TokenService
@@ -26,9 +29,12 @@ import java.util.UUID
 class AuthService(
     private val userRepository: UserRepository,
     private val refreshTokenRepository: RefreshTokenRepository,
+    private val passwordResetTokenRepository: PasswordResetTokenRepository,
     private val passwordEncoder: PasswordEncoder,
     private val tokenService: TokenService,
     private val totpService: TotpService,
+    private val emailService: EmailService,
+    private val mailProperties: MailProperties,
     private val mapper: DtoMapper,
     transactionManager: PlatformTransactionManager,
 ) {
@@ -240,9 +246,66 @@ class AuthService(
         return (forwarded?.split(",")?.firstOrNull()?.trim() ?: request.remoteAddr ?: "unknown").take(64)
     }
 
+    @Transactional
+    fun requestPasswordReset(emailInput: String) {
+        val email = emailInput.trim().lowercase()
+        val user = userRepository.findByEmail(email)
+        if (user == null || !user.enabled) {
+            log.info("Password reset requested for unknown or disabled email: {}", email)
+            return
+        }
+
+        val rawToken = tokenService.generateRefreshToken()
+        val tokenHash = tokenService.hash(rawToken)
+        val expiresAt = Instant.now().plus(mailProperties.resetTokenTtl)
+
+        passwordResetTokenRepository.save(
+            PasswordResetToken(
+                userId = user.id!!,
+                tokenHash = tokenHash,
+                expiresAt = expiresAt,
+            )
+        )
+
+        val resetUrl = "${mailProperties.frontendUrl.trimEnd('/')}/auth/reset-password?token=$rawToken"
+        emailService.sendPasswordResetEmail(user.email, user.displayName, resetUrl, user.locale)
+    }
+
+    @Transactional
+    fun resetPassword(rawToken: String, newPassword: String) {
+        val tokenHash = tokenService.hash(rawToken.trim())
+        val resetToken = passwordResetTokenRepository.findByTokenHash(tokenHash)
+            ?: throw ApiException.badRequest("Invalid or expired password reset link")
+
+        if (resetToken.used) {
+            throw ApiException.badRequest("This password reset link has already been used")
+        }
+
+        if (resetToken.expiresAt.isBefore(Instant.now())) {
+            throw ApiException.badRequest("This password reset link has expired. Please request a new one.")
+        }
+
+        validatePasswordStrength(newPassword)
+
+        val user = userRepository.findById(resetToken.userId).orElseThrow { ApiException.notFound("User") }
+        user.passwordHash = passwordEncoder.encode(newPassword)
+        userRepository.save(user)
+
+        resetToken.used = true
+        passwordResetTokenRepository.save(resetToken)
+
+        // Revoke active sessions across all devices for security
+        refreshTokenRepository.revokeAllForUser(user.id!!, Instant.now())
+        log.info("Password successfully reset for user: {}", user.id)
+    }
+
     @Scheduled(cron = "0 30 3 * * *")
     @Transactional
-    fun purgeExpiredTokens() = refreshTokenRepository.deleteExpired(Instant.now())
+    fun purgeExpiredTokens() {
+        val now = Instant.now()
+        refreshTokenRepository.deleteExpired(now)
+        passwordResetTokenRepository.deleteExpiredOrUsed(now)
+    }
 
     companion object {
         /** Pre-computed Argon2id hash used to equalise login timing for unknown accounts. */

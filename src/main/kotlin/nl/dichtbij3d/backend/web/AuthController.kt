@@ -56,6 +56,18 @@ class AuthController(
         return MessageResponse("Password updated")
     }
 
+    @PostMapping("/forgot-password")
+    fun forgotPassword(@Valid @RequestBody request: ForgotPasswordRequest): MessageResponse {
+        authService.requestPasswordReset(request.email)
+        return MessageResponse("If an account exists with this email address, a password reset link has been sent.")
+    }
+
+    @PostMapping("/reset-password")
+    fun resetPassword(@Valid @RequestBody request: ResetPasswordRequest): MessageResponse {
+        authService.resetPassword(request.token, request.newPassword)
+        return MessageResponse("Password has been reset successfully.")
+    }
+
     // ---------------------------------------------------------------- TOTP
 
     @PostMapping("/mfa/totp/setup")

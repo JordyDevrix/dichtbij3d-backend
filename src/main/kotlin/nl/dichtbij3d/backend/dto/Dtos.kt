@@ -54,6 +54,15 @@ data class PasswordChangeRequest(
     @field:NotBlank @field:Size(min = 10, max = 200) val newPassword: String,
 )
 
+data class ForgotPasswordRequest(
+    @field:Email @field:NotBlank val email: String,
+)
+
+data class ResetPasswordRequest(
+    @field:NotBlank val token: String,
+    @field:NotBlank @field:Size(min = 10, max = 200) val newPassword: String,
+)
+
 data class PasskeyRegisterFinishRequest(
     val credential: Map<String, Any?>,
     val label: String? = null,

@@ -53,6 +53,15 @@ interface RefreshTokenRepository : JpaRepository<RefreshToken, UUID> {
 }
 
 @Repository
+interface PasswordResetTokenRepository : JpaRepository<PasswordResetToken, UUID> {
+    fun findByTokenHash(tokenHash: String): PasswordResetToken?
+
+    @Modifying
+    @Query("delete from PasswordResetToken t where t.expiresAt < :now or t.used = true")
+    fun deleteExpiredOrUsed(@Param("now") now: Instant)
+}
+
+@Repository
 interface PasskeyCredentialRepository : JpaRepository<PasskeyCredential, UUID> {
     fun findByCredentialId(credentialId: String): PasskeyCredential?
     fun findAllByUserId(userId: UUID): List<PasskeyCredential>

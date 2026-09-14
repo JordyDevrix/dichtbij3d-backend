@@ -44,3 +44,12 @@ data class AdminProperties(
     val email: String = "admin@dichtbij3d.nl",
     val password: String = "Admin123!",
 )
+
+@ConfigurationProperties(prefix = "dichtbij3d.mail")
+data class MailProperties(
+    val from: String = "noreply@jordydevrix.com",
+    val fromName: String = "Dichtbij3D",
+    val frontendUrl: String = "http://localhost:8081",
+    val resetTokenTtl: Duration = Duration.ofMinutes(30),
+)
+

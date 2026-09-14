@@ -130,6 +130,28 @@ class RefreshToken(
 )
 
 @Entity
+@Table(name = "password_reset_tokens")
+class PasswordResetToken(
+    @Id @GeneratedValue @Column(columnDefinition = "uuid")
+    var id: UUID? = null,
+
+    @Column(name = "user_id", nullable = false, columnDefinition = "uuid")
+    var userId: UUID,
+
+    @Column(name = "token_hash", nullable = false, length = 64)
+    var tokenHash: String,
+
+    @Column(name = "expires_at", nullable = false)
+    var expiresAt: Instant,
+
+    @Column(nullable = false)
+    var used: Boolean = false,
+
+    @Column(name = "created_at", nullable = false)
+    var createdAt: Instant = Instant.now(),
+)
+
+@Entity
 @Table(name = "passkey_credentials")
 class PasskeyCredential(
     @Id @GeneratedValue @Column(columnDefinition = "uuid")
