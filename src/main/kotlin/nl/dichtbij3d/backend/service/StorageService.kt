@@ -106,7 +106,10 @@ class StorageService(private val props: StorageProperties) {
     }
 
     /** Public URL served by this service (keeps auth/CORS simple, works for MinIO and disk alike). */
-    fun publicUrl(key: String?): String? = key?.let { "/api/files/$it" }
+    fun publicUrl(key: String?): String? = key?.let {
+        val safeKey = if (it.startsWith("adverts/")) it.replaceFirst("adverts/", "listings/") else it
+        "/api/files/$safeKey"
+    }
 
     private fun resolveLocal(key: String): Path {
         val resolved = fallbackRoot.resolve(key).normalize()

@@ -272,7 +272,8 @@ class FileController(private val storage: StorageService) {
         @RequestParam(defaultValue = "uploads") folder: String,
     ): UploadResponse {
         if (file.isEmpty) throw ApiException.badRequest("No file uploaded")
-        val safeFolder = folder.filter { it.isLetterOrDigit() || it == '-' }.ifBlank { "uploads" }
+        val filteredFolder = folder.filter { it.isLetterOrDigit() || it == '-' }.ifBlank { "uploads" }
+        val safeFolder = if (filteredFolder == "adverts") "listings" else filteredFolder
         if (safeFolder == "models") {
             val originalName = file.originalFilename?.lowercase() ?: ""
             val isModel = originalName.endsWith(".3mf") || originalName.endsWith(".obj") || originalName.endsWith(".stl")
@@ -283,7 +284,7 @@ class FileController(private val storage: StorageService) {
             }
         }
         val stored = storage.store(file, safeFolder)
-        return UploadResponse(stored.key, "/api/files/${stored.key}", stored.fileName, stored.size)
+        return UploadResponse(stored.key, storage.publicUrl(stored.key) ?: "/api/files/${stored.key}", stored.fileName, stored.size)
     }
 
     @GetMapping("/files/**")
@@ -291,7 +292,10 @@ class FileController(private val storage: StorageService) {
         val key = request.requestURI.substringAfter("/api/files/")
             .let { java.net.URLDecoder.decode(it, Charsets.UTF_8) }
         if (key.isBlank() || key.contains("..")) throw ApiException.badRequest("Invalid file key")
-        val stream = storage.read(key) ?: throw ApiException.notFound("File")
+        val stream = storage.read(key)
+            ?: (if (key.startsWith("listings/")) storage.read(key.replaceFirst("listings/", "adverts/")) else null)
+            ?: (if (key.startsWith("adverts/")) storage.read(key.replaceFirst("adverts/", "listings/")) else null)
+            ?: throw ApiException.notFound("File")
         val contentType = when (key.substringAfterLast('.', "").lowercase()) {
             "png" -> MediaType.IMAGE_PNG
             "jpg", "jpeg" -> MediaType.IMAGE_JPEG

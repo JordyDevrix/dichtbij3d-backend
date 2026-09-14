@@ -54,6 +54,7 @@ class AdvertService(
     private val auditLog: AuditLogRepository,
     private val mapper: DtoMapper,
     private val viewProps: ViewProperties,
+    private val storage: StorageService,
 ) {
 
     // ------------------------------------------------------------- querying
@@ -175,8 +176,8 @@ class AdvertService(
             postalCode = advert.postalCode,
             deadline = advert.deadline,
             viewCount = advert.viewCount,
-            imageUrls = advert.images.sortedBy { it.sortOrder }.map { "/api/files/${it.objectKey}" }
-                .ifEmpty { listOfNotNull(advert.model?.thumbnailKey?.let { "/api/files/$it" }) },
+            imageUrls = advert.images.sortedBy { it.sortOrder }.map { storage.publicUrl(it.objectKey) ?: "/api/files/${it.objectKey}" }
+                .ifEmpty { listOfNotNull(advert.model?.thumbnailKey?.let { storage.publicUrl(it) ?: "/api/files/$it" }) },
             imageKeys = advert.images.sortedBy { it.sortOrder }.map { it.objectKey }
                 .ifEmpty { listOfNotNull(advert.model?.thumbnailKey) },
             tags = advert.tags.map { mapper.tag(it, locale) }.sortedBy { it.label },
