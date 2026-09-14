@@ -62,8 +62,10 @@ class SecurityConfig(
                     "/swagger-ui/**",
                     "/swagger-ui.html",
                 ).permitAll()
+                // Authenticated GET endpoints before general wildcards
+                auth.requestMatchers(HttpMethod.GET, "/api/users/me", "/api/users/blocks", "/api/models/mine", "/api/models/library").authenticated()
                 // Browsing the marketplace does not require an account.
-                auth.requestMatchers(HttpMethod.GET, "/api/adverts/**", "/api/models/**", "/api/tags/**", "/api/printers/**")
+                auth.requestMatchers(HttpMethod.GET, "/api/adverts/**", "/api/models/**", "/api/tags/**", "/api/printers/**", "/api/users/*")
                     .permitAll()
                 auth.requestMatchers(HttpMethod.POST, "/api/adverts/*/view", "/api/calculator/estimate").permitAll()
                 auth.requestMatchers("/api/admin/**").hasRole("ADMIN")
