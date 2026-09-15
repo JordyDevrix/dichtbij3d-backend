@@ -5,6 +5,7 @@ import nl.dichtbij3d.backend.config.MailProperties
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.mail.javamail.JavaMailSender
+import org.springframework.mail.javamail.JavaMailSenderImpl
 import org.springframework.mail.javamail.MimeMessageHelper
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
@@ -17,14 +18,38 @@ class EmailService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
+     * Checks whether a functional mail sender is configured.
+     * In development or when SMTP is not configured (or host/password is missing when required),
+     * this returns false.
+     */
+    fun isMailConfigured(): Boolean {
+        if (mailSender == null) return false
+        if (mailSender is JavaMailSenderImpl) {
+            val host = mailSender.host
+            if (host.isNullOrBlank()) return false
+
+            val auth = mailSender.javaMailProperties.getProperty("mail.smtp.auth")?.toBoolean() ?: true
+            if (auth && mailSender.password.isNullOrBlank()) {
+                log.warn(
+                    "[SMTP not fully configured] SMTP auth is enabled for host '{}' but no password was specified. " +
+                        "Please configure SPRING_MAIL_PASSWORD (or MAIL_PASSWORD / SMTP_PASSWORD) in your environment.",
+                    host,
+                )
+                return false
+            }
+        }
+        return true
+    }
+
+    /**
      * Dispatches a password reset email to the user.
-     * If [JavaMailSender] is not configured (e.g. in local development without SMTP),
-     * the reset link is printed to the server logs.
+     * If [JavaMailSender] is not configured (e.g. in local development without SMTP,
+     * or when credentials are missing), the reset link is printed to the server logs.
      */
     fun sendPasswordResetEmail(toEmail: String, displayName: String, resetUrl: String, locale: String = "nl") {
-        if (mailSender == null) {
+        if (!isMailConfigured()) {
             log.warn(
-                "[DEV MODE - SMTP not configured] Password reset requested for '{}' ({}). Reset URL:\n{}",
+                "[DEV MODE / SMTP not configured] Password reset requested for '{}' ({}). Reset URL:\n{}",
                 displayName,
                 toEmail,
                 resetUrl,
@@ -32,8 +57,26 @@ class EmailService(
             return
         }
 
+        val sender = mailSender!!
+
+        // Ensure passwords with accidental spaces (e.g. 16-character Google App Passwords)
+        // or leading/trailing whitespace are cleaned before sending.
+        if (sender is JavaMailSenderImpl) {
+            val currentPass = sender.password
+            if (!currentPass.isNullOrBlank()) {
+                val trimmed = currentPass.trim()
+                if (sender.host?.contains("gmail", ignoreCase = true) == true &&
+                    trimmed.length == 19 && trimmed.count { it == ' ' } == 3
+                ) {
+                    sender.password = trimmed.replace(" ", "")
+                } else if (trimmed != currentPass) {
+                    sender.password = trimmed
+                }
+            }
+        }
+
         try {
-            val message = mailSender.createMimeMessage()
+            val message = sender.createMimeMessage()
             val helper = MimeMessageHelper(message, true, "UTF-8")
 
             helper.setFrom(InternetAddress(props.from, props.fromName, "UTF-8"))
@@ -45,10 +88,16 @@ class EmailService(
 
             helper.setText(textBody, htmlBody)
 
-            mailSender.send(message)
+            sender.send(message)
             log.info("Password reset email successfully sent from {} to {}", props.from, toEmail)
         } catch (ex: Exception) {
-            log.error("Failed to send password reset email to {}: {}", toEmail, ex.message, ex)
+            log.error(
+                "Failed to send password reset email to {}: {}. Reset URL for manual use:\n{}",
+                toEmail,
+                ex.message,
+                resetUrl,
+                ex,
+            )
         }
     }
 

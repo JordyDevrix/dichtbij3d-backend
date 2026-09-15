@@ -41,16 +41,16 @@ spring:
     serialization:
       write-dates-as-timestamps: false
   mail:
-    host: ${SPRING_MAIL_HOST:${MAIL_HOST:}}
-    port: ${SPRING_MAIL_PORT:${MAIL_PORT:587}}
-    username: ${SPRING_MAIL_USERNAME:${MAIL_USERNAME:}}
-    password: ${SPRING_MAIL_PASSWORD:${MAIL_PASSWORD:}}
+    host: ${SPRING_MAIL_HOST:${MAIL_HOST:${SMTP_HOST:}}}
+    port: ${SPRING_MAIL_PORT:${MAIL_PORT:${SMTP_PORT:587}}}
+    username: ${SPRING_MAIL_USERNAME:${MAIL_USERNAME:${SMTP_USERNAME:${SMTP_USER:}}}}
+    password: ${SPRING_MAIL_PASSWORD:${MAIL_PASSWORD:${SMTP_PASSWORD:${SMTP_PASS:}}}}
     properties:
       mail:
         smtp:
-          auth: ${SPRING_MAIL_SMTP_AUTH:${MAIL_SMTP_AUTH:true}}
+          auth: ${SPRING_MAIL_SMTP_AUTH:${MAIL_SMTP_AUTH:${SMTP_AUTH:true}}}
           starttls:
-            enable: ${SPRING_MAIL_SMTP_STARTTLS:${MAIL_SMTP_STARTTLS:true}}
+            enable: ${SPRING_MAIL_SMTP_STARTTLS:${MAIL_SMTP_STARTTLS:${SMTP_STARTTLS:true}}}
 
 management:
   endpoints:
@@ -108,7 +108,7 @@ dichtbij3d:
   demo-data:
     enabled: ${DEMO_DATA:true}
   mail:
-    from: ${MAIL_FROM:noreply@jordydevrix.com}
-    from-name: ${MAIL_FROM_NAME:Dichtbij3D}
-    frontend-url: ${FRONTEND_URL:http://localhost:8081}
+    from: ${MAIL_FROM:${SPRING_MAIL_FROM:noreply@jordydevrix.com}}
+    from-name: ${MAIL_FROM_NAME:${SPRING_MAIL_FROM_NAME:Dichtbij3D}}
+    frontend-url: ${FRONTEND_URL:${PUBLIC_URL:http://localhost:8081}}
     reset-token-ttl: ${MAIL_RESET_TOKEN_TTL:PT30M}
