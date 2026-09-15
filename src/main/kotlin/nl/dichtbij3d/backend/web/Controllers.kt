@@ -298,8 +298,22 @@ class FileController(private val storage: StorageService) {
         if (file.isEmpty) throw ApiException.badRequest("No file uploaded")
         val filteredFolder = folder.filter { it.isLetterOrDigit() || it == '-' }.ifBlank { "uploads" }
         val safeFolder = if (filteredFolder == "adverts") "listings" else filteredFolder
+        val originalName = file.originalFilename?.lowercase() ?: ""
+
+        // SEC-02: Reject SVG files containing active content / executable scripts
+        val isSvg = originalName.endsWith(".svg") || file.contentType?.equals("image/svg+xml", ignoreCase = true) == true
+        if (isSvg) {
+            val content = file.bytes.toString(Charsets.UTF_8).lowercase()
+            val dangerousPatterns = listOf(
+                "<script", "javascript:", "onload=", "onerror=", "onclick=",
+                "onmouseover=", "onfocus=", "<iframe", "<embed", "<object", "<foreignobject"
+            )
+            if (dangerousPatterns.any { content.contains(it) }) {
+                throw ApiException.badRequest("SVG file contains prohibited scripts or active content")
+            }
+        }
+
         if (safeFolder == "models") {
-            val originalName = file.originalFilename?.lowercase() ?: ""
             val isModel = originalName.endsWith(".3mf") || originalName.endsWith(".obj") || originalName.endsWith(".stl")
             val isImage = originalName.endsWith(".png") || originalName.endsWith(".jpg") || originalName.endsWith(".jpeg") ||
                 originalName.endsWith(".webp") || originalName.endsWith(".gif") || originalName.endsWith(".heic") || originalName.endsWith(".heif")
@@ -308,7 +322,7 @@ class FileController(private val storage: StorageService) {
             }
         }
         val stored = storage.store(file, safeFolder)
-        return UploadResponse(stored.key, storage.publicUrl(stored.key) ?: "/api/files/${stored.key}", stored.fileName, stored.size)
+        return UploadResponse(stored.key, storage.publicUrl(stored.key) ?: "", stored.fileName, stored.size)
     }
 
     @GetMapping("/files/**")
@@ -316,8 +330,17 @@ class FileController(private val storage: StorageService) {
         val key = request.requestURI.substringAfter("/api/files/")
             .let { java.net.URLDecoder.decode(it, Charsets.UTF_8) }
         if (key.isBlank() || key.contains("..")) throw ApiException.badRequest("Invalid file key")
+
+        // SEC-01: Prohibit direct public access to private/restricted folders like models/ and chat/
+        val normalizedKey = if (key.startsWith("adverts/")) key.replaceFirst("adverts/", "listings/") else key
+        val allowedPublicPrefixes = listOf("avatars/", "listings/", "adverts/", "banner/", "announcements/", "thumbnails/", "public/")
+        if (allowedPublicPrefixes.none { normalizedKey.startsWith(it) }) {
+            throw ApiException.notFound("File")
+        }
+
         val (stream, size) = storage.readWithAlias(key) ?: throw ApiException.notFound("File")
-        val contentType = when (key.substringAfterLast('.', "").lowercase()) {
+        val ext = key.substringAfterLast('.', "").lowercase()
+        val contentType = when (ext) {
             "png" -> MediaType.IMAGE_PNG
             "jpg", "jpeg" -> MediaType.IMAGE_JPEG
             "gif" -> MediaType.IMAGE_GIF
@@ -329,7 +352,15 @@ class FileController(private val storage: StorageService) {
         }
         val builder = ResponseEntity.ok()
             .contentType(contentType)
+            .header("X-Content-Type-Options", "nosniff")
             .cacheControl(org.springframework.http.CacheControl.maxAge(java.time.Duration.ofDays(7)).cachePublic())
+
+        // SEC-02: Protect against SVG XSS by setting a strict CSP and safe inline disposition
+        if (ext == "svg" || contentType == MediaType.parseMediaType("image/svg+xml")) {
+            builder.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+            builder.header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"image.svg\"")
+        }
+
         if (size != null && size > 0) {
             builder.contentLength(size)
         }

@@ -574,7 +574,7 @@ class ChatService(
         fileName = message.fileName,
         fileSize = message.fileSize,
         fileUrl = message.objectKey?.let {
-            storage.publicUrl(it) ?: "/api/conversations/${message.conversation.id}/messages/${message.id}/download"
+            "/api/conversations/${message.conversation.id}/messages/${message.id}/download"
         },
         createdAt = message.createdAt,
     )
