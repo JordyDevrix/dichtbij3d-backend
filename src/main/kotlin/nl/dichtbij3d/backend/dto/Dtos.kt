@@ -399,9 +399,15 @@ data class NotificationDto(
 // ---------------------------------------------------------------- chat
 
 data class ConversationStartRequest(
-    val userId: UUID,
+    val userId: UUID? = null,
+    val userIds: List<UUID> = emptyList(),
+    val title: String? = null,
     val advertId: UUID? = null,
     @field:Size(max = 4000) val message: String? = null,
+)
+
+data class AddParticipantRequest(
+    val userId: UUID,
 )
 
 data class MessageCreateRequest(
@@ -415,7 +421,10 @@ data class MessageCreateRequest(
 
 data class ConversationDto(
     val id: UUID,
+    val title: String? = null,
+    val isGroup: Boolean = false,
     val peer: PublicUserDto,
+    val participants: List<PublicUserDto> = emptyList(),
     val advert: ConversationAdvertDto?,
     val lastMessage: String?,
     val lastMessageAt: Instant,
@@ -437,6 +446,7 @@ data class MessageDto(
     val kind: MessageKind,
     val senderId: UUID,
     val mine: Boolean,
+    val sender: PublicUserDto? = null,
     val fileName: String? = null,
     val fileSize: Long? = null,
     val fileUrl: String? = null,

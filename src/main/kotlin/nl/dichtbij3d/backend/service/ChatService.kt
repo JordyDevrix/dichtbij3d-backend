@@ -3,6 +3,7 @@ package nl.dichtbij3d.backend.service
 import nl.dichtbij3d.backend.domain.Advert
 import nl.dichtbij3d.backend.domain.AdvertType
 import nl.dichtbij3d.backend.domain.Conversation
+import nl.dichtbij3d.backend.domain.ConversationParticipant
 import nl.dichtbij3d.backend.domain.Message
 import nl.dichtbij3d.backend.domain.MessageKind
 import nl.dichtbij3d.backend.domain.Model3d
@@ -10,12 +11,14 @@ import nl.dichtbij3d.backend.domain.ModelFile
 import nl.dichtbij3d.backend.domain.ModelLicense
 import nl.dichtbij3d.backend.domain.ModelVisibility
 import nl.dichtbij3d.backend.domain.NotificationType
+import nl.dichtbij3d.backend.domain.Role
 import nl.dichtbij3d.backend.domain.User
 import nl.dichtbij3d.backend.dto.ConversationAdvertDto
 import nl.dichtbij3d.backend.dto.ConversationDto
 import nl.dichtbij3d.backend.dto.MessageCreateRequest
 import nl.dichtbij3d.backend.dto.MessageDto
 import nl.dichtbij3d.backend.dto.PageResponse
+import nl.dichtbij3d.backend.dto.PublicUserDto
 import nl.dichtbij3d.backend.repo.AdvertRepository
 import nl.dichtbij3d.backend.repo.ConversationRepository
 import nl.dichtbij3d.backend.repo.MessageRepository
@@ -74,30 +77,133 @@ class ChatService(
     }
 
     @Transactional
-    fun start(principal: AppPrincipal, peerId: UUID, advertId: UUID?, firstMessage: String?): ConversationDto {
-        if (peerId == principal.id) throw ApiException.badRequest("You cannot start a chat with yourself")
+    fun start(
+        principal: AppPrincipal,
+        peerId: UUID? = null,
+        peerIds: List<UUID> = emptyList(),
+        title: String? = null,
+        advertId: UUID? = null,
+        firstMessage: String? = null,
+    ): ConversationDto {
+        val targets = (peerIds + listOfNotNull(peerId)).distinct().filter { it != principal.id }
+        if (targets.isEmpty()) throw ApiException.badRequest("At least one recipient must be selected")
         val me = users.findById(principal.id).orElseThrow { ApiException.notFound("User") }
-        val peer = users.findById(peerId).orElseThrow { ApiException.notFound("User") }
-        if (peer.deletedAt != null || !peer.enabled) throw ApiException.badRequest("This user can no longer be reached")
-        if (blocks.isBlocked(principal.id, peerId)) throw ApiException.forbidden("You cannot message this person")
 
         // The advert is only a label on the thread, so an unknown or removed one
         // simply degrades to a plain direct chat instead of failing.
         val advert = advertId?.let { adverts.findById(it).orElse(null) }?.takeIf { it.deletedAt == null }
-        val conversation = findOrCreate(me, peer, advert)
-        firstMessage?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            post(conversation, me, it, MessageKind.TEXT)
+
+        if (targets.size == 1 && title.isNullOrBlank()) {
+            val peer = users.findById(targets.first()).orElseThrow { ApiException.notFound("User") }
+            if (peer.deletedAt != null || !peer.enabled) throw ApiException.badRequest("This user can no longer be reached")
+            if (blocks.isBlocked(principal.id, peer.id!!)) throw ApiException.forbidden("You cannot message this person")
+            val conversation = findOrCreate(me, peer, advert)
+            firstMessage?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                post(conversation, me, it, MessageKind.TEXT)
+            }
+            return toDto(conversation, principal.id)
         }
-        return toDto(conversation, principal.id)
+
+        // Multi-user or titled collaboration thread
+        val targetUsers = targets.map { targetId ->
+            val u = users.findById(targetId).orElseThrow { ApiException.notFound("User") }
+            if (u.deletedAt != null || !u.enabled) throw ApiException.badRequest("User ${u.displayName} can no longer be reached")
+            if (blocks.isBlocked(principal.id, targetId)) throw ApiException.forbidden("You cannot message ${u.displayName}")
+            u
+        }
+
+        val cleanTitle = title?.trim()?.take(140)?.ifBlank { null }
+        val conversation = Conversation(
+            title = cleanTitle,
+            advert = advert,
+            lastMessageAt = Instant.now(),
+        )
+        if (targetUsers.size == 1) {
+            val other = targetUsers.first()
+            val first = me.id!!.toString() < other.id!!.toString()
+            conversation.participantA = if (first) me else other
+            conversation.participantB = if (first) other else me
+        }
+        val allUsers = (listOf(me) + targetUsers).distinctBy { it.id }
+        for (u in allUsers) {
+            conversation.participants.add(
+                ConversationParticipant(
+                    conversation = conversation,
+                    user = u,
+                    readAt = if (u.id == me.id) Instant.now() else null,
+                )
+            )
+        }
+        val saved = conversations.save(conversation)
+
+        if (!firstMessage.isNullOrBlank()) {
+            post(saved, me, firstMessage.trim(), MessageKind.TEXT)
+        } else {
+            post(
+                saved,
+                me,
+                "${me.displayName} started a collaboration thread",
+                MessageKind.SYSTEM,
+                notify = false,
+            )
+        }
+
+        return toDto(saved, principal.id)
+    }
+
+    @Transactional
+    fun addParticipant(conversationId: UUID, newUserId: UUID, principal: AppPrincipal): ConversationDto {
+        val conversation = require(conversationId, principal)
+        if (newUserId == principal.id) throw ApiException.badRequest("You are already in this conversation")
+        val me = users.findById(principal.id).orElseThrow { ApiException.notFound("User") }
+        val newUser = users.findById(newUserId).orElseThrow { ApiException.notFound("User") }
+        if (newUser.deletedAt != null || !newUser.enabled) throw ApiException.badRequest("This user can no longer be reached")
+        if (blocks.isBlocked(principal.id, newUserId)) throw ApiException.forbidden("You cannot message this person")
+
+        if (conversation.includes(newUserId)) {
+            throw ApiException.badRequest("This user is already part of the conversation")
+        }
+
+        val participant = ConversationParticipant(
+            conversation = conversation,
+            user = newUser,
+            readAt = null,
+            joinedAt = Instant.now(),
+        )
+        conversation.participants.add(participant)
+        val saved = conversations.save(conversation)
+
+        post(
+            conversation = saved,
+            sender = me,
+            body = "${me.displayName} added ${newUser.displayName} to the conversation",
+            kind = MessageKind.SYSTEM,
+            notify = false,
+        )
+
+        notifications.push(
+            userId = newUser.id!!,
+            type = NotificationType.MESSAGE_RECEIVED,
+            title = conversation.title ?: "Added to conversation",
+            body = "${me.displayName} added you to a collaboration thread",
+            link = "/messages/${saved.id}",
+        )
+
+        return toDto(saved, principal.id)
     }
 
     @Transactional
     fun send(id: UUID, principal: AppPrincipal, request: MessageCreateRequest): MessageDto {
         val conversation = require(id, principal)
         val me = users.findById(principal.id).orElseThrow { ApiException.notFound("User") }
-        val peer = conversation.other(principal.id)
-        if (peer.deletedAt != null || !peer.enabled) throw ApiException.badRequest("This user can no longer be reached")
-        if (blocks.isBlocked(principal.id, peer.id!!)) throw ApiException.forbidden("You cannot message this person")
+        val otherUsers = conversation.participants.map { it.user }.filter { it.id != principal.id }.ifEmpty {
+            listOfNotNull(conversation.other(principal.id))
+        }
+        if (otherUsers.size == 1) {
+            val peer = otherUsers.first()
+            if (peer.deletedAt != null || !peer.enabled) throw ApiException.badRequest("This user can no longer be reached")
+            if (blocks.isBlocked(principal.id, peer.id!!)) throw ApiException.forbidden("You cannot message this person")
+        }
 
         val bodyText = request.body?.trim().orEmpty().ifEmpty {
             if (request.kind == MessageKind.FILE) {
@@ -226,10 +332,23 @@ class ChatService(
         val first = one.id!!.toString() < two.id!!.toString()
         val a = if (first) one else two
         val b = if (first) two else one
-        conversations.findPair(a.id!!, b.id!!, advert?.id)?.let { return it }
-        return conversations.save(
-            Conversation(participantA = a, participantB = b, advert = advert, lastMessageAt = Instant.now())
+        conversations.findPair(a.id!!, b.id!!, advert?.id)?.let { existing ->
+            if (existing.participants.isEmpty()) {
+                existing.participants.add(ConversationParticipant(conversation = existing, user = a))
+                existing.participants.add(ConversationParticipant(conversation = existing, user = b))
+                return conversations.save(existing)
+            }
+            return existing
+        }
+        val conversation = Conversation(
+            participantA = a,
+            participantB = b,
+            advert = advert,
+            lastMessageAt = Instant.now(),
         )
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = a))
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = b))
+        return conversations.save(conversation)
     }
 
     private fun post(
@@ -243,12 +362,18 @@ class ChatService(
         objectKey: String? = null,
         contentType: String? = null,
     ): Message {
-        val peer = conversation.other(sender.id!!)
-        val hadUnread = messages.countUnread(
-            conversation.id!!,
-            peer.id!!,
-            conversation.readAtFor(peer.id!!) ?: Instant.EPOCH,
-        ) > 0
+        val allRecipients = conversation.participants.map { it.user }.filter { it.id != sender.id }.ifEmpty {
+            listOfNotNull(conversation.other(sender.id!!))
+        }.distinctBy { it.id }
+
+        val freshRecipients = if (notify) {
+            allRecipients.filter { recipient ->
+                val readAt = conversation.readAtFor(recipient.id!!) ?: Instant.EPOCH
+                messages.countUnread(conversation.id!!, recipient.id!!, readAt) == 0L
+            }
+        } else {
+            emptyList()
+        }
 
         val message = messages.save(
             Message(
@@ -275,28 +400,50 @@ class ChatService(
 
         // Only nudge on the first unread message of a thread, so a burst of replies
         // does not turn into a wall of notifications.
-        if (notify && !hadUnread) {
+        if (notify && freshRecipients.isNotEmpty()) {
             val notifBody = if (kind == MessageKind.FILE) {
                 "Sent a file: ${fileName ?: "Attachment"}"
             } else {
                 body.take(120)
             }
-            notifications.push(
-                userId = peer.id!!,
-                type = NotificationType.MESSAGE_RECEIVED,
-                title = "New message from ${sender.displayName}",
-                body = notifBody,
-                link = "/messages/${conversation.id}",
-            )
+            val titlePrefix = conversation.title?.let { "$it: " } ?: ""
+            for (recipient in freshRecipients) {
+                notifications.push(
+                    userId = recipient.id!!,
+                    type = NotificationType.MESSAGE_RECEIVED,
+                    title = "$titlePrefix${sender.displayName}",
+                    body = notifBody,
+                    link = "/messages/${conversation.id}",
+                )
+            }
         }
         return message
     }
 
     private fun toDto(conversation: Conversation, viewerId: UUID): ConversationDto {
-        val peer = conversation.other(viewerId)
+        val peerUser = conversation.other(viewerId) ?: conversation.participantA ?: conversation.participantB
+        val publicPeer = if (peerUser != null) {
+            mapper.publicUser(peerUser)
+        } else {
+            PublicUserDto(
+                id = viewerId,
+                displayName = conversation.title ?: "Group",
+                avatarUrl = null,
+                roles = emptySet<Role>(),
+                city = null,
+                memberSince = conversation.createdAt,
+            )
+        }
+        val participantDtos = conversation.participants.map { mapper.publicUser(it.user) }.ifEmpty {
+            listOfNotNull(conversation.participantA, conversation.participantB).map { mapper.publicUser(it) }
+        }.distinctBy { it.id }
+        val isGroup = participantDtos.size > 2 || conversation.title != null
         return ConversationDto(
             id = conversation.id!!,
-            peer = mapper.publicUser(peer),
+            title = conversation.title,
+            isGroup = isGroup,
+            peer = publicPeer,
+            participants = participantDtos,
             advert = conversation.advert?.takeIf { it.deletedAt == null }?.let {
                 ConversationAdvertDto(
                     id = it.id!!,
@@ -323,6 +470,7 @@ class ChatService(
         kind = message.kind,
         senderId = message.sender.id!!,
         mine = message.sender.id == viewerId,
+        sender = mapper.publicUser(message.sender),
         fileName = message.fileName,
         fileSize = message.fileSize,
         fileUrl = message.objectKey?.let {

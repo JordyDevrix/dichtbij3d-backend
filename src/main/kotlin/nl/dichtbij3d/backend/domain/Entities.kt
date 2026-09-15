@@ -703,19 +703,44 @@ class AuditLogEntry(
 )
 
 @Entity
+@Table(name = "conversation_participants")
+class ConversationParticipant(
+    @Id @GeneratedValue @Column(columnDefinition = "uuid")
+    var id: UUID? = null,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "conversation_id")
+    var conversation: Conversation,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id")
+    var user: User,
+
+    @Column(name = "read_at")
+    var readAt: Instant? = null,
+
+    @Column(name = "joined_at", nullable = false)
+    var joinedAt: Instant = Instant.now(),
+)
+
+@Entity
 @Table(name = "conversations")
 class Conversation(
     @Id @GeneratedValue @Column(columnDefinition = "uuid")
     var id: UUID? = null,
 
-    /** Always the participant with the lowest UUID, so a pair maps to one row. */
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "participant_a")
-    var participantA: User,
+    /** Optional title for group or project collaboration threads. */
+    @Column(length = 140)
+    var title: String? = null,
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    /** For 1-on-1 chats: the participant with lowest UUID. Nullable for multi-user group threads. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "participant_a")
+    var participantA: User? = null,
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "participant_b")
-    var participantB: User,
+    var participantB: User? = null,
 
     /** The advert this thread is about, or null for a plain direct message. */
     @ManyToOne(fetch = FetchType.LAZY)
@@ -736,15 +761,28 @@ class Conversation(
 
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
+
+    @OneToMany(mappedBy = "conversation", cascade = [CascadeType.ALL], orphanRemoval = true)
+    var participants: MutableList<ConversationParticipant> = mutableListOf(),
 ) {
-    fun includes(userId: UUID) = participantA.id == userId || participantB.id == userId
+    fun includes(userId: UUID): Boolean =
+        participants.any { it.user.id == userId } || participantA?.id == userId || participantB?.id == userId
 
-    fun other(userId: UUID): User = if (participantA.id == userId) participantB else participantA
+    fun other(userId: UUID): User? =
+        participants.firstOrNull { it.user.id != userId }?.user
+            ?: if (participantA?.id == userId) participantB else participantA
 
-    fun readAtFor(userId: UUID): Instant? = if (participantA.id == userId) aReadAt else bReadAt
+    fun readAtFor(userId: UUID): Instant? =
+        participants.firstOrNull { it.user.id == userId }?.readAt
+            ?: if (participantA?.id == userId) aReadAt else if (participantB?.id == userId) bReadAt else null
 
     fun markRead(userId: UUID, now: Instant) {
-        if (participantA.id == userId) aReadAt = now else bReadAt = now
+        val p = participants.firstOrNull { it.user.id == userId }
+        if (p != null) {
+            p.readAt = now
+        }
+        if (participantA?.id == userId) aReadAt = now
+        if (participantB?.id == userId) bReadAt = now
     }
 }
 

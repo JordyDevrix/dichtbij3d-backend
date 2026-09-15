@@ -1,6 +1,7 @@
 package nl.dichtbij3d.backend.web
 
 import jakarta.validation.Valid
+import nl.dichtbij3d.backend.dto.AddParticipantRequest
 import nl.dichtbij3d.backend.dto.ConversationDto
 import nl.dichtbij3d.backend.dto.ConversationStartRequest
 import nl.dichtbij3d.backend.dto.MessageCreateRequest
@@ -37,7 +38,21 @@ class ChatController(private val service: ChatService) {
     fun start(
         @AuthenticationPrincipal principal: AppPrincipal,
         @Valid @RequestBody request: ConversationStartRequest,
-    ): ConversationDto = service.start(principal, request.userId, request.advertId, request.message)
+    ): ConversationDto = service.start(
+        principal = principal,
+        peerId = request.userId,
+        peerIds = request.userIds,
+        title = request.title,
+        advertId = request.advertId,
+        firstMessage = request.message,
+    )
+
+    @PostMapping("/{id}/participants")
+    fun addParticipant(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @PathVariable id: UUID,
+        @Valid @RequestBody request: AddParticipantRequest,
+    ): ConversationDto = service.addParticipant(id, request.userId, principal)
 
     @GetMapping("/{id}")
     fun detail(@AuthenticationPrincipal principal: AppPrincipal, @PathVariable id: UUID): ConversationDto =

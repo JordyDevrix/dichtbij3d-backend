@@ -3,6 +3,7 @@ package nl.dichtbij3d.backend.web
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import nl.dichtbij3d.backend.domain.Category
+import nl.dichtbij3d.backend.domain.Role
 import nl.dichtbij3d.backend.dto.*
 import nl.dichtbij3d.backend.repo.TagRepository
 import nl.dichtbij3d.backend.repo.UserRepository
@@ -30,6 +31,29 @@ class UserController(
     private val blockService: BlockService,
     private val mapper: DtoMapper,
 ) {
+
+    @GetMapping
+    fun search(
+        @RequestParam(required = false) q: String?,
+        @RequestParam(required = false) role: Role?,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "20") size: Int,
+        @AuthenticationPrincipal principal: AppPrincipal?,
+    ): PageResponse<PublicUserDto> {
+        val excluded = buildSet {
+            if (principal != null) {
+                add(principal.id)
+                addAll(blockService.hiddenFor(principal))
+            }
+        }.takeIf { it.isNotEmpty() }
+        val results = userRepository.searchCollaborators(
+            q = q?.trim()?.ifBlank { null },
+            role = role,
+            excludedIds = excluded,
+            pageable = PageRequest.of(page, size.coerceIn(1, 50)),
+        )
+        return PageResponse.of(results.map { mapper.publicUser(it) })
+    }
 
     @GetMapping("/me")
     fun me(@AuthenticationPrincipal principal: AppPrincipal): UserProfileDto =

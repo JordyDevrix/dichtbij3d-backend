@@ -31,6 +31,26 @@ interface UserRepository : JpaRepository<User, UUID>, JpaSpecificationExecutor<U
         """
     )
     fun search(@Param("q") q: String?, pageable: Pageable): Page<User>
+
+    @Query(
+        """
+        select distinct u from User u left join u.roles r
+        where u.deletedAt is null and u.enabled = true
+          and (:excludedIds is null or u.id not in :excludedIds)
+          and (:role is null or r = :role)
+          and (:q is null
+               or lower(u.displayName) like lower(concat('%', cast(:q as string), '%'))
+               or lower(coalesce(u.city, '')) like lower(concat('%', cast(:q as string), '%'))
+               or lower(coalesce(u.bio, '')) like lower(concat('%', cast(:q as string), '%')))
+        order by u.displayName asc
+        """
+    )
+    fun searchCollaborators(
+        @Param("q") q: String?,
+        @Param("role") role: Role?,
+        @Param("excludedIds") excludedIds: Collection<UUID>?,
+        pageable: Pageable,
+    ): Page<User>
 }
 
 @Repository
@@ -253,12 +273,20 @@ interface AuditLogRepository : JpaRepository<AuditLogEntry, UUID> {
 }
 
 @Repository
+interface ConversationParticipantRepository : JpaRepository<ConversationParticipant, UUID> {
+    fun findByConversationIdAndUserId(conversationId: UUID, userId: UUID): ConversationParticipant?
+    fun findAllByConversationId(conversationId: UUID): List<ConversationParticipant>
+    fun existsByConversationIdAndUserId(conversationId: UUID, userId: UUID): Boolean
+}
+
+@Repository
 interface ConversationRepository : JpaRepository<Conversation, UUID> {
 
     @Query(
         """
-        select c from Conversation c
-        where (c.participantA.id = :userId or c.participantB.id = :userId)
+        select distinct c from Conversation c
+        left join c.participants p
+        where (p.user.id = :userId or c.participantA.id = :userId or c.participantB.id = :userId)
         order by c.lastMessageAt desc
         """
     )
@@ -302,14 +330,14 @@ interface MessageRepository : JpaRepository<Message, UUID> {
     /** Total unread messages across every conversation the user takes part in. */
     @Query(
         """
-        select count(m) from Message m
+        select count(distinct m.id) from Message m
+        join m.conversation c
+        left join c.participants p
         where m.deletedAt is null and m.sender.id <> :userId
           and (
-            (m.conversation.participantA.id = :userId
-              and m.createdAt > coalesce(m.conversation.aReadAt, :epoch))
-            or
-            (m.conversation.participantB.id = :userId
-              and m.createdAt > coalesce(m.conversation.bReadAt, :epoch))
+            (p.user.id = :userId and m.createdAt > coalesce(p.readAt, :epoch))
+            or (c.participantA.id = :userId and m.createdAt > coalesce(c.aReadAt, :epoch))
+            or (c.participantB.id = :userId and m.createdAt > coalesce(c.bReadAt, :epoch))
           )
         """
     )
