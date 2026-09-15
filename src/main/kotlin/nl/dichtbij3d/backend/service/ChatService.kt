@@ -11,10 +11,12 @@ import nl.dichtbij3d.backend.domain.ModelFile
 import nl.dichtbij3d.backend.domain.ModelLicense
 import nl.dichtbij3d.backend.domain.ModelVisibility
 import nl.dichtbij3d.backend.domain.NotificationType
+import nl.dichtbij3d.backend.domain.ParticipantStatus
 import nl.dichtbij3d.backend.domain.Role
 import nl.dichtbij3d.backend.domain.User
 import nl.dichtbij3d.backend.dto.ConversationAdvertDto
 import nl.dichtbij3d.backend.dto.ConversationDto
+import nl.dichtbij3d.backend.dto.ConversationParticipantDto
 import nl.dichtbij3d.backend.dto.MessageCreateRequest
 import nl.dichtbij3d.backend.dto.MessageDto
 import nl.dichtbij3d.backend.dto.PageResponse
@@ -126,15 +128,30 @@ class ChatService(
         }
         val allUsers = (listOf(me) + targetUsers).distinctBy { it.id }
         for (u in allUsers) {
+            val isCreator = u.id == me.id
             conversation.participants.add(
                 ConversationParticipant(
                     conversation = conversation,
                     user = u,
-                    readAt = if (u.id == me.id) Instant.now() else null,
+                    status = if (isCreator) ParticipantStatus.JOINED else ParticipantStatus.INVITED,
+                    invitedBy = if (isCreator) null else me,
+                    readAt = if (isCreator) Instant.now() else null,
                 )
             )
         }
         val saved = conversations.save(conversation)
+
+        // Send invitation push notification to each invited user
+        val inviteNotifTitle = cleanTitle ?: "Gespreksuitnodiging"
+        for (target in targetUsers) {
+            notifications.push(
+                userId = target.id!!,
+                type = NotificationType.MESSAGE_RECEIVED,
+                title = inviteNotifTitle,
+                body = "${me.displayName} heeft je uitgenodigd voor een gesprek",
+                link = "/messages/${saved.id}",
+            )
+        }
 
         if (!firstMessage.isNullOrBlank()) {
             post(saved, me, firstMessage.trim(), MessageKind.TEXT)
@@ -160,23 +177,35 @@ class ChatService(
         if (newUser.deletedAt != null || !newUser.enabled) throw ApiException.badRequest("This user can no longer be reached")
         if (blocks.isBlocked(principal.id, newUserId)) throw ApiException.forbidden("You cannot message this person")
 
-        if (conversation.includes(newUserId)) {
-            throw ApiException.badRequest("This user is already part of the conversation")
+        val existingParticipant = conversation.participantFor(newUserId)
+        if (existingParticipant != null) {
+            if (existingParticipant.status == ParticipantStatus.JOINED) {
+                throw ApiException.badRequest("This user is already part of the conversation")
+            } else if (existingParticipant.status == ParticipantStatus.INVITED) {
+                throw ApiException.badRequest("This user has already been invited to the conversation")
+            } else {
+                // Was DECLINED before: re-invite
+                existingParticipant.status = ParticipantStatus.INVITED
+                existingParticipant.invitedBy = me
+                existingParticipant.joinedAt = Instant.now()
+            }
+        } else {
+            val participant = ConversationParticipant(
+                conversation = conversation,
+                user = newUser,
+                status = ParticipantStatus.INVITED,
+                invitedBy = me,
+                readAt = null,
+                joinedAt = Instant.now(),
+            )
+            conversation.participants.add(participant)
         }
-
-        val participant = ConversationParticipant(
-            conversation = conversation,
-            user = newUser,
-            readAt = null,
-            joinedAt = Instant.now(),
-        )
-        conversation.participants.add(participant)
         val saved = conversations.save(conversation)
 
         post(
             conversation = saved,
             sender = me,
-            body = "${me.displayName} added ${newUser.displayName} to the conversation",
+            body = "${me.displayName} invited ${newUser.displayName} to the conversation",
             kind = MessageKind.SYSTEM,
             notify = false,
         )
@@ -184,8 +213,8 @@ class ChatService(
         notifications.push(
             userId = newUser.id!!,
             type = NotificationType.MESSAGE_RECEIVED,
-            title = conversation.title ?: "Added to conversation",
-            body = "${me.displayName} added you to a collaboration thread",
+            title = conversation.title ?: "Gespreksuitnodiging",
+            body = "${me.displayName} heeft je uitgenodigd voor een gesprek",
             link = "/messages/${saved.id}",
         )
 
@@ -193,8 +222,59 @@ class ChatService(
     }
 
     @Transactional
+    fun acceptInvite(conversationId: UUID, principal: AppPrincipal): ConversationDto {
+        val conversation = require(conversationId, principal)
+        val me = users.findById(principal.id).orElseThrow { ApiException.notFound("User") }
+        val participant = conversation.participantFor(principal.id)
+            ?: throw ApiException.badRequest("You are not a participant in this conversation")
+
+        if (participant.status != ParticipantStatus.JOINED) {
+            participant.status = ParticipantStatus.JOINED
+            participant.readAt = Instant.now()
+            conversations.save(conversation)
+
+            post(
+                conversation = conversation,
+                sender = me,
+                body = "${me.displayName} joined the conversation",
+                kind = MessageKind.SYSTEM,
+                notify = false,
+            )
+        }
+
+        return toDto(conversation, principal.id)
+    }
+
+    @Transactional
+    fun declineInvite(conversationId: UUID, principal: AppPrincipal): ConversationDto {
+        val conversation = require(conversationId, principal)
+        val me = users.findById(principal.id).orElseThrow { ApiException.notFound("User") }
+        val participant = conversation.participantFor(principal.id)
+            ?: throw ApiException.badRequest("You are not a participant in this conversation")
+
+        if (participant.status != ParticipantStatus.DECLINED) {
+            participant.status = ParticipantStatus.DECLINED
+            conversations.save(conversation)
+
+            post(
+                conversation = conversation,
+                sender = me,
+                body = "${me.displayName} declined the invitation",
+                kind = MessageKind.SYSTEM,
+                notify = false,
+            )
+        }
+
+        return toDto(conversation, principal.id)
+    }
+
+    @Transactional
     fun send(id: UUID, principal: AppPrincipal, request: MessageCreateRequest): MessageDto {
         val conversation = require(id, principal)
+        val myParticipant = conversation.participantFor(principal.id)
+        if (myParticipant != null && myParticipant.status != ParticipantStatus.JOINED) {
+            throw ApiException.badRequest("You must accept the conversation invitation first")
+        }
         val me = users.findById(principal.id).orElseThrow { ApiException.notFound("User") }
         val otherUsers = conversation.participants.map { it.user }.filter { it.id != principal.id }.ifEmpty {
             listOfNotNull(conversation.other(principal.id))
@@ -334,8 +414,8 @@ class ChatService(
         val b = if (first) two else one
         conversations.findPair(a.id!!, b.id!!, advert?.id)?.let { existing ->
             if (existing.participants.isEmpty()) {
-                existing.participants.add(ConversationParticipant(conversation = existing, user = a))
-                existing.participants.add(ConversationParticipant(conversation = existing, user = b))
+                existing.participants.add(ConversationParticipant(conversation = existing, user = a, status = ParticipantStatus.JOINED))
+                existing.participants.add(ConversationParticipant(conversation = existing, user = b, status = ParticipantStatus.JOINED))
                 return conversations.save(existing)
             }
             return existing
@@ -346,8 +426,8 @@ class ChatService(
             advert = advert,
             lastMessageAt = Instant.now(),
         )
-        conversation.participants.add(ConversationParticipant(conversation = conversation, user = a))
-        conversation.participants.add(ConversationParticipant(conversation = conversation, user = b))
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = a, status = ParticipantStatus.JOINED))
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = b, status = ParticipantStatus.JOINED))
         return conversations.save(conversation)
     }
 
@@ -362,9 +442,13 @@ class ChatService(
         objectKey: String? = null,
         contentType: String? = null,
     ): Message {
-        val allRecipients = conversation.participants.map { it.user }.filter { it.id != sender.id }.ifEmpty {
-            listOfNotNull(conversation.other(sender.id!!))
-        }.distinctBy { it.id }
+        val allRecipients = conversation.participants
+            .filter { it.user.id != sender.id && it.status == ParticipantStatus.JOINED }
+            .map { it.user }
+            .ifEmpty {
+                listOfNotNull(conversation.other(sender.id!!))
+            }
+            .distinctBy { it.id }
 
         val freshRecipients = if (notify) {
             allRecipients.filter { recipient ->
@@ -434,16 +518,36 @@ class ChatService(
                 memberSince = conversation.createdAt,
             )
         }
+        val participantDetails = conversation.participants.map {
+            ConversationParticipantDto(
+                user = mapper.publicUser(it.user),
+                status = it.status,
+                joinedAt = it.joinedAt,
+            )
+        }
         val participantDtos = conversation.participants.map { mapper.publicUser(it.user) }.ifEmpty {
             listOfNotNull(conversation.participantA, conversation.participantB).map { mapper.publicUser(it) }
         }.distinctBy { it.id }
         val isGroup = participantDtos.size > 2 || conversation.title != null
+        val myParticipant = conversation.participantFor(viewerId)
+        val myStatus = myParticipant?.status ?: ParticipantStatus.JOINED
+        val unreadCount = if (myStatus != ParticipantStatus.JOINED) {
+            0L
+        } else {
+            messages.countUnread(
+                conversation.id!!,
+                viewerId,
+                conversation.readAtFor(viewerId) ?: Instant.EPOCH,
+            )
+        }
         return ConversationDto(
             id = conversation.id!!,
             title = conversation.title,
             isGroup = isGroup,
             peer = publicPeer,
             participants = participantDtos,
+            participantDetails = participantDetails,
+            myStatus = myStatus,
             advert = conversation.advert?.takeIf { it.deletedAt == null }?.let {
                 ConversationAdvertDto(
                     id = it.id!!,
@@ -454,11 +558,7 @@ class ChatService(
             },
             lastMessage = conversation.lastMessage,
             lastMessageAt = conversation.lastMessageAt,
-            unreadCount = messages.countUnread(
-                conversation.id!!,
-                viewerId,
-                conversation.readAtFor(viewerId) ?: Instant.EPOCH,
-            ),
+            unreadCount = unreadCount,
             createdAt = conversation.createdAt,
         )
     }

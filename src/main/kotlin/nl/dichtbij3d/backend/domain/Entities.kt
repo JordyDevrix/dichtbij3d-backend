@@ -716,6 +716,14 @@ class ConversationParticipant(
     @JoinColumn(name = "user_id")
     var user: User,
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    var status: ParticipantStatus = ParticipantStatus.JOINED,
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "invited_by")
+    var invitedBy: User? = null,
+
     @Column(name = "read_at")
     var readAt: Instant? = null,
 
@@ -766,10 +774,20 @@ class Conversation(
     var participants: MutableList<ConversationParticipant> = mutableListOf(),
 ) {
     fun includes(userId: UUID): Boolean =
-        participants.any { it.user.id == userId } || participantA?.id == userId || participantB?.id == userId
+        participants.any { it.user.id == userId && it.status != ParticipantStatus.DECLINED }
+            || ((participantA?.id == userId || participantB?.id == userId) && participants.none { it.user.id == userId && it.status == ParticipantStatus.DECLINED })
+
+    fun participantFor(userId: UUID): ConversationParticipant? =
+        participants.firstOrNull { it.user.id == userId }
+
+    fun statusFor(userId: UUID): ParticipantStatus =
+        participantFor(userId)?.status ?: ParticipantStatus.JOINED
+
+    fun isJoined(userId: UUID): Boolean =
+        statusFor(userId) == ParticipantStatus.JOINED
 
     fun other(userId: UUID): User? =
-        participants.firstOrNull { it.user.id != userId }?.user
+        participants.firstOrNull { it.user.id != userId && it.status != ParticipantStatus.DECLINED }?.user
             ?: if (participantA?.id == userId) participantB else participantA
 
     fun readAtFor(userId: UUID): Instant? =

@@ -419,12 +419,20 @@ data class MessageCreateRequest(
     val contentType: String? = null,
 )
 
+data class ConversationParticipantDto(
+    val user: PublicUserDto,
+    val status: ParticipantStatus = ParticipantStatus.JOINED,
+    val joinedAt: Instant,
+)
+
 data class ConversationDto(
     val id: UUID,
     val title: String? = null,
     val isGroup: Boolean = false,
     val peer: PublicUserDto,
     val participants: List<PublicUserDto> = emptyList(),
+    val participantDetails: List<ConversationParticipantDto> = emptyList(),
+    val myStatus: ParticipantStatus = ParticipantStatus.JOINED,
     val advert: ConversationAdvertDto?,
     val lastMessage: String?,
     val lastMessageAt: Instant,

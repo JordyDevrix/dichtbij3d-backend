@@ -286,7 +286,10 @@ interface ConversationRepository : JpaRepository<Conversation, UUID> {
         """
         select distinct c from Conversation c
         left join c.participants p
-        where (p.user.id = :userId or c.participantA.id = :userId or c.participantB.id = :userId)
+        where (
+            (p.user.id = :userId and p.status <> nl.dichtbij3d.backend.domain.ParticipantStatus.DECLINED)
+            or (c.participants is empty and (c.participantA.id = :userId or c.participantB.id = :userId))
+        )
         order by c.lastMessageAt desc
         """
     )
@@ -335,9 +338,11 @@ interface MessageRepository : JpaRepository<Message, UUID> {
         left join c.participants p
         where m.deletedAt is null and m.sender.id <> :userId
           and (
-            (p.user.id = :userId and m.createdAt > coalesce(p.readAt, :epoch))
-            or (c.participantA.id = :userId and m.createdAt > coalesce(c.aReadAt, :epoch))
-            or (c.participantB.id = :userId and m.createdAt > coalesce(c.bReadAt, :epoch))
+            (p.user.id = :userId and p.status = nl.dichtbij3d.backend.domain.ParticipantStatus.JOINED and m.createdAt > coalesce(p.readAt, :epoch))
+            or (c.participants is empty and (
+                (c.participantA.id = :userId and m.createdAt > coalesce(c.aReadAt, :epoch))
+                or (c.participantB.id = :userId and m.createdAt > coalesce(c.bReadAt, :epoch))
+            ))
           )
         """
     )

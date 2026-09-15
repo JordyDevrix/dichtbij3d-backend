@@ -86,7 +86,7 @@ class ChatCollaborationTest {
     }
 
     @Test
-    fun `start multi-user collaboration chat`() {
+    fun `start multi-user collaboration chat invites targets`() {
         val dto = chatService.start(
             principal = principal,
             peerIds = listOf(designerId, printerId),
@@ -98,18 +98,34 @@ class ChatCollaborationTest {
         assertEquals("Drone Frame Collaboration", dto.title)
         assertTrue(dto.isGroup)
         assertEquals(3, dto.participants.size)
-        val names = dto.participants.map { it.displayName }
-        assertTrue(names.contains("Customer Me"))
-        assertTrue(names.contains("Alice Designer"))
-        assertTrue(names.contains("Bob Printer"))
+        assertEquals(ParticipantStatus.JOINED, dto.myStatus)
+
+        val designerDetail = dto.participantDetails.find { it.user.id == designerId }
+        val printerDetail = dto.participantDetails.find { it.user.id == printerId }
+        assertNotNull(designerDetail)
+        assertNotNull(printerDetail)
+        assertEquals(ParticipantStatus.INVITED, designerDetail!!.status)
+        assertEquals(ParticipantStatus.INVITED, printerDetail!!.status)
+
+        // Verify push notifications sent to invited users
+        val notifUserCaptor = ArgumentCaptor.forClass(UUID::class.java)
+        verify(notificationService, atLeastOnce()).push(
+            capture(notifUserCaptor),
+            anyNonNull(),
+            anyNonNull(),
+            any(),
+            any(),
+        )
+        assertTrue(notifUserCaptor.allValues.contains(designerId))
+        assertTrue(notifUserCaptor.allValues.contains(printerId))
 
         val messageCaptor = ArgumentCaptor.forClass(Message::class.java)
-        verify(messageRepo, atLeastOnce()).save(messageCaptor.capture())
+        verify(messageRepo, atLeastOnce()).save(capture(messageCaptor))
         assertTrue(messageCaptor.allValues.any { it.body == "Hello team, let's collaborate on this print!" })
     }
 
     @Test
-    fun `add participant to existing conversation`() {
+    fun `add participant to existing conversation creates invitation`() {
         // Create an existing 1-on-1 conversation
         val conversation = Conversation(
             id = UUID.randomUUID(),
@@ -117,8 +133,8 @@ class ChatCollaborationTest {
             participantB = designer,
             lastMessageAt = Instant.now(),
         )
-        conversation.participants.add(ConversationParticipant(conversation = conversation, user = me))
-        conversation.participants.add(ConversationParticipant(conversation = conversation, user = designer))
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = me, status = ParticipantStatus.JOINED))
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = designer, status = ParticipantStatus.JOINED))
 
         `when`(conversationRepo.findById(conversation.id!!)).thenReturn(Optional.of(conversation))
 
@@ -132,28 +148,135 @@ class ChatCollaborationTest {
         assertTrue(updated.isGroup)
         assertTrue(updated.participants.any { it.id == printerId })
 
+        val printerDetail = updated.participantDetails.find { it.user.id == printerId }
+        assertNotNull(printerDetail)
+        assertEquals(ParticipantStatus.INVITED, printerDetail!!.status)
+
         // Check system message was posted
         val messageCaptor = ArgumentCaptor.forClass(Message::class.java)
-        verify(messageRepo).save(messageCaptor.capture())
+        verify(messageRepo).save(capture(messageCaptor))
         val systemMsg = messageCaptor.value
         assertEquals(MessageKind.SYSTEM, systemMsg.kind)
-        assertTrue(systemMsg.body.contains("Customer Me added Bob Printer to the conversation"))
+        assertTrue(systemMsg.body.contains("Customer Me invited Bob Printer to the conversation"))
+
+        // Check notification was sent to invited user
+        val addNotifCaptor = ArgumentCaptor.forClass(UUID::class.java)
+        verify(notificationService).push(
+            capture(addNotifCaptor),
+            anyNonNull(),
+            anyNonNull(),
+            any(),
+            any(),
+        )
+        assertEquals(printerId, addNotifCaptor.value)
     }
 
     @Test
-    fun `cannot add already existing participant`() {
+    fun `cannot add already existing joined participant`() {
         val conversation = Conversation(
             id = UUID.randomUUID(),
             participantA = me,
             participantB = designer,
         )
-        conversation.participants.add(ConversationParticipant(conversation = conversation, user = me))
-        conversation.participants.add(ConversationParticipant(conversation = conversation, user = designer))
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = me, status = ParticipantStatus.JOINED))
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = designer, status = ParticipantStatus.JOINED))
 
         `when`(conversationRepo.findById(conversation.id!!)).thenReturn(Optional.of(conversation))
 
         assertThrows(ApiException::class.java) {
             chatService.addParticipant(conversation.id!!, designerId, principal)
+        }
+    }
+
+    @Test
+    fun `invited user cannot send message until accepted`() {
+        val conversation = Conversation(
+            id = UUID.randomUUID(),
+            title = "Test Collab",
+        )
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = me, status = ParticipantStatus.JOINED))
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = printer, status = ParticipantStatus.INVITED))
+
+        `when`(conversationRepo.findById(conversation.id!!)).thenReturn(Optional.of(conversation))
+
+        val printerPrincipal = AppPrincipal(id = printerId, email = printer.email, displayName = printer.displayName, roles = setOf(Role.PRINTER))
+
+        val ex = assertThrows(ApiException::class.java) {
+            chatService.send(conversation.id!!, printerPrincipal, nl.dichtbij3d.backend.dto.MessageCreateRequest(body = "I want to talk"))
+        }
+        assertTrue(ex.message!!.contains("accept the conversation invitation first"))
+    }
+
+    @Test
+    fun `invited user can accept invitation and join`() {
+        val conversation = Conversation(
+            id = UUID.randomUUID(),
+            title = "Test Collab",
+        )
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = me, status = ParticipantStatus.JOINED))
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = printer, status = ParticipantStatus.INVITED))
+
+        `when`(conversationRepo.findById(conversation.id!!)).thenReturn(Optional.of(conversation))
+
+        val printerPrincipal = AppPrincipal(id = printerId, email = printer.email, displayName = printer.displayName, roles = setOf(Role.PRINTER))
+
+        val updated = chatService.acceptInvite(conversation.id!!, printerPrincipal)
+        assertEquals(ParticipantStatus.JOINED, updated.myStatus)
+
+        val printerParticipant = conversation.participantFor(printerId)
+        assertNotNull(printerParticipant)
+        assertEquals(ParticipantStatus.JOINED, printerParticipant!!.status)
+
+        // System message for joining
+        val messageCaptor = ArgumentCaptor.forClass(Message::class.java)
+        verify(messageRepo).save(capture(messageCaptor))
+        assertTrue(messageCaptor.value.body.contains("Bob Printer joined the conversation"))
+    }
+
+    @Test
+    fun `invited user can decline invitation`() {
+        val conversation = Conversation(
+            id = UUID.randomUUID(),
+            title = "Test Collab",
+        )
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = me, status = ParticipantStatus.JOINED))
+        conversation.participants.add(ConversationParticipant(conversation = conversation, user = printer, status = ParticipantStatus.INVITED))
+
+        `when`(conversationRepo.findById(conversation.id!!)).thenReturn(Optional.of(conversation))
+
+        val printerPrincipal = AppPrincipal(id = printerId, email = printer.email, displayName = printer.displayName, roles = setOf(Role.PRINTER))
+
+        val updated = chatService.declineInvite(conversation.id!!, printerPrincipal)
+        assertEquals(ParticipantStatus.DECLINED, updated.myStatus)
+
+        val printerParticipant = conversation.participantFor(printerId)
+        assertNotNull(printerParticipant)
+        assertEquals(ParticipantStatus.DECLINED, printerParticipant!!.status)
+
+        // System message for declining
+        val messageCaptor = ArgumentCaptor.forClass(Message::class.java)
+        verify(messageRepo).save(capture(messageCaptor))
+        assertTrue(messageCaptor.value.body.contains("Bob Printer declined the invitation"))
+    }
+
+    companion object {
+        private inline fun <reified T : Any> capture(captor: ArgumentCaptor<T>): T {
+            captor.capture()
+            return createDummy(T::class.java)
+        }
+
+        private inline fun <reified T : Any> anyNonNull(): T {
+            any(T::class.java)
+            return createDummy(T::class.java)
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun <T : Any> createDummy(clazz: Class<T>): T = when (clazz) {
+            UUID::class.java -> UUID.randomUUID() as T
+            String::class.java -> "" as T
+            NotificationType::class.java -> NotificationType.SYSTEM as T
+            Message::class.java -> Message(conversation = Conversation(), sender = User(email = "", displayName = ""), kind = MessageKind.TEXT, body = "") as T
+            else -> mock(clazz)
         }
     }
 }

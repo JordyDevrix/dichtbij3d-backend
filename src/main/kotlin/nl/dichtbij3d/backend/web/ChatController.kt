@@ -54,6 +54,18 @@ class ChatController(private val service: ChatService) {
         @Valid @RequestBody request: AddParticipantRequest,
     ): ConversationDto = service.addParticipant(id, request.userId, principal)
 
+    @PostMapping(path = ["/{id}/accept", "/{id}/approve"])
+    fun accept(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @PathVariable id: UUID,
+    ): ConversationDto = service.acceptInvite(id, principal)
+
+    @PostMapping("/{id}/decline")
+    fun decline(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @PathVariable id: UUID,
+    ): ConversationDto = service.declineInvite(id, principal)
+
     @GetMapping("/{id}")
     fun detail(@AuthenticationPrincipal principal: AppPrincipal, @PathVariable id: UUID): ConversationDto =
         service.detail(id, principal)

@@ -134,3 +134,7 @@ enum class MessageKind { TEXT, SYSTEM, FILE }
 enum class WebAuthnPurpose { REGISTRATION, AUTHENTICATION }
 
 enum class ReportStatus { OPEN, RESOLVED, DISMISSED }
+
+/** Status of a user in a conversation (invitation flow for collaboration). */
+enum class ParticipantStatus { INVITED, JOINED, DECLINED }
+
