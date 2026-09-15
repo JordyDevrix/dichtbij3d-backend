@@ -2,11 +2,13 @@ package nl.dichtbij3d.backend.service
 
 import jakarta.servlet.http.HttpServletRequest
 import nl.dichtbij3d.backend.config.MailProperties
+import nl.dichtbij3d.backend.domain.EmailMfaToken
 import nl.dichtbij3d.backend.domain.PasswordResetToken
 import nl.dichtbij3d.backend.domain.RefreshToken
 import nl.dichtbij3d.backend.domain.Role
 import nl.dichtbij3d.backend.domain.User
 import nl.dichtbij3d.backend.dto.*
+import nl.dichtbij3d.backend.repo.EmailMfaTokenRepository
 import nl.dichtbij3d.backend.repo.PasswordResetTokenRepository
 import nl.dichtbij3d.backend.repo.RefreshTokenRepository
 import nl.dichtbij3d.backend.repo.UserRepository
@@ -22,6 +24,7 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.transaction.annotation.Transactional
+import java.security.SecureRandom
 import java.time.Instant
 import java.util.UUID
 
@@ -30,6 +33,7 @@ class AuthService(
     private val userRepository: UserRepository,
     private val refreshTokenRepository: RefreshTokenRepository,
     private val passwordResetTokenRepository: PasswordResetTokenRepository,
+    private val emailMfaTokenRepository: EmailMfaTokenRepository,
     private val passwordEncoder: PasswordEncoder,
     private val tokenService: TokenService,
     private val totpService: TotpService,
@@ -39,6 +43,7 @@ class AuthService(
     transactionManager: PlatformTransactionManager,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+    private val secureRandom = SecureRandom()
 
     /** Used to persist token-family revocation even when the request ends in an error. */
     private val requiresNew = TransactionTemplate(transactionManager).apply {
@@ -85,13 +90,43 @@ class AuthService(
             throw ApiException.forbidden(user.disabledReason ?: "This account has been disabled by an administrator")
         }
 
-        if (user.totpEnabled) {
-            val code = request.totpCode
-            if (code.isNullOrBlank()) {
-                return AuthResponse(mfaRequired = true, mfaToken = tokenService.createMfaChallengeToken(user))
-            }
-            if (!totpService.verify(user.totpSecret!!, code)) {
-                throw ApiException.unauthorized("Invalid verification code")
+        val mfaRequired = user.totpEnabled || user.emailMfaEnabled
+        if (mfaRequired) {
+            val code = (request.mfaCode ?: request.totpCode)?.trim()?.ifBlank { null }
+            if (!code.isNullOrBlank()) {
+                var verified = false
+                if (user.totpEnabled && user.totpSecret != null) {
+                    if (totpService.verify(user.totpSecret!!, code)) {
+                        verified = true
+                    }
+                }
+                if (!verified && user.emailMfaEnabled) {
+                    val token = emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+                        user.id!!, "LOGIN", Instant.now()
+                    )
+                    if (token != null && token.codeHash == tokenService.hash(code)) {
+                        token.used = true
+                        emailMfaTokenRepository.save(token)
+                        verified = true
+                    }
+                }
+                if (!verified) {
+                    throw ApiException.unauthorized("Invalid verification code")
+                }
+            } else {
+                val mfaToken = tokenService.createMfaChallengeToken(user)
+                if (user.emailMfaEnabled) {
+                    issueAndSendEmailMfaCode(user, "LOGIN")
+                }
+                val methods = buildSet {
+                    if (user.totpEnabled) add("totp")
+                    if (user.emailMfaEnabled) add("email")
+                }
+                return AuthResponse(
+                    mfaRequired = true,
+                    mfaToken = mfaToken,
+                    mfaMethods = methods,
+                )
             }
         }
         return issueTokens(user, httpRequest)
@@ -103,8 +138,31 @@ class AuthService(
             ?: throw ApiException.unauthorized("The verification session expired, please sign in again")
         if (parsed.type != TokenType.MFA) throw ApiException.unauthorized("Invalid verification session")
         val user = userRepository.findById(parsed.userId).orElseThrow { ApiException.unauthorized() }
-        val secret = user.totpSecret ?: throw ApiException.badRequest("Two-factor authentication is not enabled")
-        if (!totpService.verify(secret, request.code)) throw ApiException.unauthorized("Invalid verification code")
+        if (!user.totpEnabled && !user.emailMfaEnabled) {
+            throw ApiException.badRequest("Two-factor authentication is not enabled")
+        }
+
+        val code = request.code.trim()
+        var verified = false
+
+        if (user.totpEnabled && user.totpSecret != null) {
+            if (totpService.verify(user.totpSecret!!, code)) {
+                verified = true
+            }
+        }
+
+        if (!verified && user.emailMfaEnabled) {
+            val token = emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+                user.id!!, "LOGIN", Instant.now()
+            )
+            if (token != null && token.codeHash == tokenService.hash(code)) {
+                token.used = true
+                emailMfaTokenRepository.save(token)
+                verified = true
+            }
+        }
+
+        if (!verified) throw ApiException.unauthorized("Invalid verification code")
         return issueTokens(user, httpRequest)
     }
 
@@ -228,6 +286,117 @@ class AuthService(
         userRepository.save(user)
     }
 
+    // ------------------------------------------------------------ Email MFA
+
+    @Transactional
+    fun sendLoginEmailMfaCode(mfaToken: String): MessageResponse {
+        val parsed = tokenService.parse(mfaToken)
+            ?: throw ApiException.unauthorized("The verification session expired, please sign in again")
+        if (parsed.type != TokenType.MFA) throw ApiException.unauthorized("Invalid verification session")
+        val user = userRepository.findById(parsed.userId).orElseThrow { ApiException.unauthorized() }
+        if (!user.emailMfaEnabled) {
+            throw ApiException.badRequest("Email two-factor authentication is not enabled for this account")
+        }
+
+        val recent = emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+            user.id!!, "LOGIN", Instant.now()
+        )
+        if (recent != null && recent.createdAt.isAfter(Instant.now().minusSeconds(30))) {
+            throw ApiException.badRequest("Please wait a moment before requesting another code")
+        }
+
+        issueAndSendEmailMfaCode(user, "LOGIN")
+        return MessageResponse("A new verification code has been sent to your email address")
+    }
+
+    @Transactional
+    fun startEmailMfaSetup(userId: UUID): MessageResponse {
+        val user = userRepository.findById(userId).orElseThrow { ApiException.notFound("User") }
+        if (user.emailMfaEnabled) throw ApiException.conflict("Email two-factor authentication is already enabled")
+
+        val recent = emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+            user.id!!, "ENABLE", Instant.now()
+        )
+        if (recent != null && recent.createdAt.isAfter(Instant.now().minusSeconds(30))) {
+            throw ApiException.badRequest("Please wait a moment before requesting another code")
+        }
+
+        issueAndSendEmailMfaCode(user, "ENABLE")
+        return MessageResponse("A verification code has been sent to ${user.email}")
+    }
+
+    @Transactional
+    fun enableEmailMfa(userId: UUID, code: String) {
+        val user = userRepository.findById(userId).orElseThrow { ApiException.notFound("User") }
+        val cleanCode = code.trim()
+        val token = emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+            user.id!!, "ENABLE", Instant.now()
+        ) ?: throw ApiException.badRequest("No pending verification code found. Please request a new one.")
+
+        if (token.codeHash != tokenService.hash(cleanCode)) {
+            throw ApiException.badRequest("That code is not correct")
+        }
+
+        token.used = true
+        emailMfaTokenRepository.save(token)
+
+        user.emailMfaEnabled = true
+        userRepository.save(user)
+        log.info("Email MFA enabled for user: {}", user.email)
+    }
+
+    @Transactional
+    fun disableEmailMfa(userId: UUID, code: String? = null, password: String? = null) {
+        val user = userRepository.findById(userId).orElseThrow { ApiException.notFound("User") }
+        if (!user.emailMfaEnabled) return
+
+        if (!password.isNullOrBlank()) {
+            if (!passwordEncoder.matches(password, user.passwordHash)) {
+                throw ApiException.badRequest("Your current password is incorrect")
+            }
+        } else if (!code.isNullOrBlank()) {
+            val cleanCode = code.trim()
+            val token = emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+                user.id!!, "LOGIN", Instant.now()
+            ) ?: emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+                user.id!!, "ENABLE", Instant.now()
+            )
+            val matchesEmail = token != null && token.codeHash == tokenService.hash(cleanCode)
+            val matchesTotp = user.totpEnabled && user.totpSecret != null && totpService.verify(user.totpSecret!!, cleanCode)
+            if (!matchesEmail && !matchesTotp) {
+                throw ApiException.badRequest("That code is not correct")
+            }
+        }
+
+        user.emailMfaEnabled = false
+        userRepository.save(user)
+        log.info("Email MFA disabled for user: {}", user.email)
+    }
+
+    private fun issueAndSendEmailMfaCode(user: User, purpose: String): String {
+        val existing = emailMfaTokenRepository.findAllByUserIdAndPurposeAndUsedFalse(user.id!!, purpose)
+        existing.forEach { it.used = true }
+        if (existing.isNotEmpty()) {
+            emailMfaTokenRepository.saveAll(existing)
+        }
+
+        val code = "%06d".format(secureRandom.nextInt(1_000_000))
+        val tokenHash = tokenService.hash(code)
+        val expiresAt = Instant.now().plus(mailProperties.mfaTokenTtl)
+
+        emailMfaTokenRepository.save(
+            EmailMfaToken(
+                userId = user.id!!,
+                codeHash = tokenHash,
+                purpose = purpose,
+                expiresAt = expiresAt,
+            )
+        )
+
+        emailService.sendMfaCodeEmail(user.email, user.displayName, code, user.locale)
+        return code
+    }
+
     private fun validatePasswordStrength(password: String) {
         if (password.length < 10) throw ApiException.badRequest("Password must be at least 10 characters long")
         val hasLetter = password.any { it.isLetter() }
@@ -305,6 +474,7 @@ class AuthService(
         val now = Instant.now()
         refreshTokenRepository.deleteExpired(now)
         passwordResetTokenRepository.deleteExpiredOrUsed(now)
+        emailMfaTokenRepository.deleteExpiredOrUsed(now)
     }
 
     companion object {

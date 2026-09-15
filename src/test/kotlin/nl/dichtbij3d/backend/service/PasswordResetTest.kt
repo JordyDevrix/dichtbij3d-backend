@@ -42,6 +42,9 @@ class PasswordResetTest {
     private lateinit var passwordResetTokenRepository: PasswordResetTokenRepository
 
     @Mock
+    private lateinit var emailMfaTokenRepository: nl.dichtbij3d.backend.repo.EmailMfaTokenRepository
+
+    @Mock
     private lateinit var passwordEncoder: PasswordEncoder
 
     @Mock
@@ -78,6 +81,7 @@ class PasswordResetTest {
             userRepository = userRepository,
             refreshTokenRepository = refreshTokenRepository,
             passwordResetTokenRepository = passwordResetTokenRepository,
+            emailMfaTokenRepository = emailMfaTokenRepository,
             passwordEncoder = passwordEncoder,
             tokenService = tokenService,
             totpService = totpService,

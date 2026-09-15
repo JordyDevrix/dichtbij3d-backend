@@ -62,6 +62,24 @@ interface PasswordResetTokenRepository : JpaRepository<PasswordResetToken, UUID>
 }
 
 @Repository
+interface EmailMfaTokenRepository : JpaRepository<EmailMfaToken, UUID> {
+    fun findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+        userId: UUID,
+        purpose: String,
+        now: Instant,
+    ): EmailMfaToken?
+
+    fun findAllByUserIdAndPurposeAndUsedFalse(
+        userId: UUID,
+        purpose: String,
+    ): List<EmailMfaToken>
+
+    @Modifying
+    @Query("delete from EmailMfaToken t where t.expiresAt < :now or t.used = true")
+    fun deleteExpiredOrUsed(@Param("now") now: Instant)
+}
+
+@Repository
 interface PasskeyCredentialRepository : JpaRepository<PasskeyCredential, UUID> {
     fun findByCredentialId(credentialId: String): PasskeyCredential?
     fun findAllByUserId(userId: UUID): List<PasskeyCredential>

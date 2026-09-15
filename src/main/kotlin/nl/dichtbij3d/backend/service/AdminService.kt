@@ -77,6 +77,7 @@ class AdminService(
                     enabled = user.enabled,
                     disabledReason = user.disabledReason,
                     totpEnabled = user.totpEnabled,
+                    emailMfaEnabled = user.emailMfaEnabled,
                     advertCount = advertRepository.findAllByAuthorIdAndDeletedAtIsNullOrderByCreatedAtDesc(
                         user.id!!, PageRequest.of(0, 1)
                     ).totalElements,

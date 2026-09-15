@@ -92,6 +92,34 @@ class AuthController(
         return MessageResponse("Two-factor authentication disabled")
     }
 
+    // ---------------------------------------------------------------- Email MFA
+
+    @PostMapping("/mfa/email/send")
+    fun sendEmailMfaCode(@Valid @RequestBody request: MfaSendEmailRequest): MessageResponse =
+        authService.sendLoginEmailMfaCode(request.mfaToken)
+
+    @PostMapping("/mfa/email/setup")
+    fun emailMfaSetup(@AuthenticationPrincipal principal: AppPrincipal): MessageResponse =
+        authService.startEmailMfaSetup(principal.id)
+
+    @PostMapping("/mfa/email/enable")
+    fun emailMfaEnable(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @Valid @RequestBody request: EmailMfaEnableRequest,
+    ): MessageResponse {
+        authService.enableEmailMfa(principal.id, request.code)
+        return MessageResponse("Email two-factor authentication enabled")
+    }
+
+    @PostMapping("/mfa/email/disable")
+    fun emailMfaDisable(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @RequestBody(required = false) request: EmailMfaDisableRequest?,
+    ): MessageResponse {
+        authService.disableEmailMfa(principal.id, request?.code, request?.password)
+        return MessageResponse("Email two-factor authentication disabled")
+    }
+
     // ---------------------------------------------------------------- passkeys
 
     @PostMapping("/passkeys/register/options")

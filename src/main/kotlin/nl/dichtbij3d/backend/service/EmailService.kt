@@ -58,22 +58,7 @@ class EmailService(
         }
 
         val sender = mailSender!!
-
-        // Ensure passwords with accidental spaces (e.g. 16-character Google App Passwords)
-        // or leading/trailing whitespace are cleaned before sending.
-        if (sender is JavaMailSenderImpl) {
-            val currentPass = sender.password
-            if (!currentPass.isNullOrBlank()) {
-                val trimmed = currentPass.trim()
-                if (sender.host?.contains("gmail", ignoreCase = true) == true &&
-                    trimmed.length == 19 && trimmed.count { it == ' ' } == 3
-                ) {
-                    sender.password = trimmed.replace(" ", "")
-                } else if (trimmed != currentPass) {
-                    sender.password = trimmed
-                }
-            }
-        }
+        sanitizeSender(sender)
 
         try {
             val message = sender.createMimeMessage()
@@ -98,6 +83,66 @@ class EmailService(
                 resetUrl,
                 ex,
             )
+        }
+    }
+
+    /**
+     * Dispatches a two-factor authentication (MFA) verification code to the user's email.
+     * If SMTP is not configured, the code is printed to the server logs.
+     */
+    fun sendMfaCodeEmail(toEmail: String, displayName: String, code: String, locale: String = "nl") {
+        if (!isMailConfigured()) {
+            log.warn(
+                "[DEV MODE / SMTP not configured] 2FA/MFA verification code for '{}' ({}): {}",
+                displayName,
+                toEmail,
+                code,
+            )
+            return
+        }
+
+        val sender = mailSender!!
+        sanitizeSender(sender)
+
+        try {
+            val message = sender.createMimeMessage()
+            val helper = MimeMessageHelper(message, true, "UTF-8")
+
+            helper.setFrom(InternetAddress(props.from, props.fromName, "UTF-8"))
+            helper.setTo(toEmail)
+            helper.setSubject(resolveMfaSubject(locale, code))
+
+            val htmlBody = buildMfaHtmlTemplate(displayName, code, locale)
+            val textBody = buildMfaTextTemplate(displayName, code, locale)
+
+            helper.setText(textBody, htmlBody)
+
+            sender.send(message)
+            log.info("MFA verification code email successfully sent from {} to {}", props.from, toEmail)
+        } catch (ex: Exception) {
+            log.error(
+                "Failed to send MFA email to {}: {}. Verification code for manual use: {}",
+                toEmail,
+                ex.message,
+                code,
+                ex,
+            )
+        }
+    }
+
+    private fun sanitizeSender(sender: JavaMailSender) {
+        if (sender is JavaMailSenderImpl) {
+            val currentPass = sender.password
+            if (!currentPass.isNullOrBlank()) {
+                val trimmed = currentPass.trim()
+                if (sender.host?.contains("gmail", ignoreCase = true) == true &&
+                    trimmed.length == 19 && trimmed.count { it == ' ' } == 3
+                ) {
+                    sender.password = trimmed.replace(" ", "")
+                } else if (trimmed != currentPass) {
+                    sender.password = trimmed
+                }
+            }
         }
     }
 
@@ -234,6 +279,130 @@ class EmailService(
 
                 Deze link is 30 minuten geldig.
                 Heb je dit niet aangevraagd? Dan kun je deze e-mail gerust negeren.
+
+                Dichtbij3D
+            """.trimIndent()
+        }
+    }
+
+    private fun resolveMfaSubject(locale: String, code: String): String = when (locale.lowercase().take(2)) {
+        "en" -> "Your Dichtbij3D verification code: $code"
+        "de" -> "Ihr Dichtbij3D Bestätigungscode: $code"
+        "fr" -> "Votre code de vérification Dichtbij3D : $code"
+        else -> "Je Dichtbij3D verificatiecode: $code"
+    }
+
+    private fun buildMfaHtmlTemplate(name: String, code: String, locale: String): String {
+        val lang = locale.lowercase().take(2)
+        val title = when (lang) {
+            "en" -> "Two-factor authentication"
+            "de" -> "Zwei-Faktor-Authentifizierung"
+            "fr" -> "Authentification à deux facteurs"
+            else -> "Tweestapsverificatie"
+        }
+        val greeting = when (lang) {
+            "en" -> "Hello $name,"
+            "de" -> "Hallo $name,"
+            "fr" -> "Bonjour $name,"
+            else -> "Hallo $name,"
+        }
+        val intro = when (lang) {
+            "en" -> "Use the verification code below to sign in to your Dichtbij3D account:"
+            "de" -> "Verwenden Sie den folgenden Bestätigungscode, um sich bei Ihrem Dichtbij3D-Konto anzumelden:"
+            "fr" -> "Utilisez le code de vérification ci-dessous pour vous connecter à votre compte Dichtbij3D :"
+            else -> "Gebruik de onderstaande verificatiecode om in te loggen bij je Dichtbij3D-account:"
+        }
+        val expiryNotice = when (lang) {
+            "en" -> "This code is valid for 10 minutes."
+            "de" -> "Dieser Code ist 10 Minuten lang gültig."
+            "fr" -> "Ce code est valable pendant 10 minutes."
+            else -> "Deze code is 10 minuten geldig."
+        }
+        val warningNotice = when (lang) {
+            "en" -> "Never share this code with anyone. Dichtbij3D employees will never ask for your code."
+            "de" -> "Teilen Sie diesen Code niemals mit anderen. Dichtbij3D-Mitarbeiter werden Sie niemals nach diesem Code fragen."
+            "fr" -> "Ne partagez jamais ce code. Les employés de Dichtbij3D ne vous demanderont jamais ce code."
+            else -> "Deel deze code nooit met anderen. Medewerkers van Dichtbij3D zullen hier nooit naar vragen."
+        }
+        val suspiciousNotice = when (lang) {
+            "en" -> "If you did not attempt to sign in, someone may know your password. We recommend changing your password immediately."
+            "de" -> "Wenn Sie sich nicht angemeldet haben, kennt möglicherweise jemand Ihr Passwort. Bitte ändern Sie Ihr Passwort umgehend."
+            "fr" -> "Si vous n'avez pas tenté de vous connecter, quelqu'un connaît peut-être votre mot de passe. Veuillez le changer immédiatement."
+            else -> "Heb je niet geprobeerd in te loggen? Dan kent iemand mogelijk je wachtwoord. Wij raden je aan je wachtwoord direct te wijzigen."
+        }
+
+        return """
+<!DOCTYPE html>
+<html lang="$lang">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>$title</title>
+</head>
+<body style="margin: 0; padding: 24px 12px; background-color: #F8FAFC; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1E293B;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td align="center">
+        <table role="presentation" style="max-width: 520px; width: 100%; background-color: #FFFFFF; border-radius: 12px; border: 1px solid #E2E8F0; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.03);" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="padding: 32px 32px 20px 32px; border-bottom: 2px solid #FFF0E6;">
+              <span style="color: #F26514; font-size: 22px; font-weight: 800; letter-spacing: -0.5px;">Dichtbij3D</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 28px 32px;">
+              <h1 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 700; color: #0F172A;">$title</h1>
+              <p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.5; color: #334155;">$greeting</p>
+              <p style="margin: 0 0 20px 0; font-size: 15px; line-height: 1.5; color: #334155;">$intro</p>
+
+              <div style="margin: 24px 0; padding: 18px 24px; background-color: #FFF7ED; border: 2px dashed #F26514; border-radius: 10px; text-align: center;">
+                <span style="font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #EA580C; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">$code</span>
+              </div>
+
+              <p style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; color: #334155;">$expiryNotice</p>
+              <p style="margin: 0 0 16px 0; font-size: 13px; color: #64748B;">$warningNotice</p>
+
+              <hr style="border: none; border-top: 1px solid #E2E8F0; margin: 24px 0 16px 0;" />
+
+              <p style="margin: 0; font-size: 12px; line-height: 1.4; color: #94A3B8;">$suspiciousNotice</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 20px 32px; background-color: #F8FAFC; border-top: 1px solid #E2E8F0; font-size: 12px; color: #94A3B8; text-align: center;">
+              &copy; ${java.time.Year.now().value} Dichtbij3D &middot; 3D-printen dichtbij huis
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+""".trimIndent()
+    }
+
+    private fun buildMfaTextTemplate(name: String, code: String, locale: String): String {
+        val lang = locale.lowercase().take(2)
+        return when (lang) {
+            "en" -> """
+                Hello $name,
+
+                Your Dichtbij3D verification code is:
+                $code
+
+                This code is valid for 10 minutes.
+                Never share this code with anyone.
+
+                Dichtbij3D
+            """.trimIndent()
+            else -> """
+                Hallo $name,
+
+                Je Dichtbij3D verificatiecode is:
+                $code
+
+                Deze code is 10 minuten geldig.
+                Deel deze code nooit met anderen.
 
                 Dichtbij3D
             """.trimIndent()

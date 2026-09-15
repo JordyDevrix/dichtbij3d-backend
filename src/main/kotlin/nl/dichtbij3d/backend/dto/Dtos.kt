@@ -26,11 +26,16 @@ data class LoginRequest(
     @field:Email @field:NotBlank val email: String,
     @field:NotBlank val password: String,
     val totpCode: String? = null,
+    val mfaCode: String? = null,
 )
 
 data class MfaVerifyRequest(
     @field:NotBlank val mfaToken: String,
     @field:NotBlank val code: String,
+)
+
+data class MfaSendEmailRequest(
+    @field:NotBlank val mfaToken: String,
 )
 
 data class RefreshRequest(val refreshToken: String)
@@ -43,11 +48,19 @@ data class AuthResponse(
     val user: UserProfileDto? = null,
     val mfaRequired: Boolean = false,
     val mfaToken: String? = null,
+    val mfaMethods: Set<String> = emptySet(),
 )
 
 data class TotpSetupResponse(val secret: String, val otpauthUri: String)
 
 data class TotpEnableRequest(@field:NotBlank val code: String)
+
+data class EmailMfaEnableRequest(@field:NotBlank val code: String)
+
+data class EmailMfaDisableRequest(
+    val code: String? = null,
+    val password: String? = null,
+)
 
 data class PasswordChangeRequest(
     @field:NotBlank val currentPassword: String,
@@ -95,6 +108,7 @@ data class UserProfileDto(
     val mutedNotifications: Set<NotificationType> = emptySet(),
     val enabled: Boolean = true,
     val totpEnabled: Boolean = false,
+    val emailMfaEnabled: Boolean = false,
     val passkeyCount: Int = 0,
     val createdAt: Instant? = null,
 )
@@ -489,6 +503,7 @@ data class AdminUserDto(
     val enabled: Boolean,
     val disabledReason: String?,
     val totpEnabled: Boolean,
+    val emailMfaEnabled: Boolean = false,
     val advertCount: Long,
     val lastLoginAt: Instant?,
     val createdAt: Instant,

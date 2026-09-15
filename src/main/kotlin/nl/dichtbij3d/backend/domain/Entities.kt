@@ -63,6 +63,9 @@ class User(
     @Column(name = "totp_enabled", nullable = false)
     var totpEnabled: Boolean = false,
 
+    @Column(name = "email_mfa_enabled", nullable = false)
+    var emailMfaEnabled: Boolean = false,
+
     @Column(name = "last_login_at")
     var lastLoginAt: Instant? = null,
 
@@ -140,6 +143,31 @@ class PasswordResetToken(
 
     @Column(name = "token_hash", nullable = false, length = 64)
     var tokenHash: String,
+
+    @Column(name = "expires_at", nullable = false)
+    var expiresAt: Instant,
+
+    @Column(nullable = false)
+    var used: Boolean = false,
+
+    @Column(name = "created_at", nullable = false)
+    var createdAt: Instant = Instant.now(),
+)
+
+@Entity
+@Table(name = "email_mfa_tokens")
+class EmailMfaToken(
+    @Id @GeneratedValue @Column(columnDefinition = "uuid")
+    var id: UUID? = null,
+
+    @Column(name = "user_id", nullable = false, columnDefinition = "uuid")
+    var userId: UUID,
+
+    @Column(name = "code_hash", nullable = false, length = 64)
+    var codeHash: String,
+
+    @Column(nullable = false, length = 20)
+    var purpose: String = "LOGIN",
 
     @Column(name = "expires_at", nullable = false)
     var expiresAt: Instant,

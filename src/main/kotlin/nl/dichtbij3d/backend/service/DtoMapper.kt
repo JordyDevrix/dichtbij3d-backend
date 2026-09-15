@@ -55,6 +55,7 @@ class DtoMapper(
         mutedNotifications = user.mutedNotifications.toSet(),
         enabled = user.enabled,
         totpEnabled = user.totpEnabled,
+        emailMfaEnabled = user.emailMfaEnabled,
         passkeyCount = passkeyRepository.countByUserId(user.id!!).toInt(),
         createdAt = user.createdAt,
     )

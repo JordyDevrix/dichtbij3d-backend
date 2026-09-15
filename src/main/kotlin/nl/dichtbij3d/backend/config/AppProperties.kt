@@ -51,5 +51,6 @@ data class MailProperties(
     val fromName: String = "Dichtbij3D",
     val frontendUrl: String = "http://localhost:8081",
     val resetTokenTtl: Duration = Duration.ofMinutes(30),
+    val mfaTokenTtl: Duration = Duration.ofMinutes(10),
 )
 
