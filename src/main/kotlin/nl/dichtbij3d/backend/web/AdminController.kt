@@ -5,13 +5,17 @@ import nl.dichtbij3d.backend.dto.*
 import nl.dichtbij3d.backend.security.AppPrincipal
 import nl.dichtbij3d.backend.service.AdminAdvertDto
 import nl.dichtbij3d.backend.service.AdminService
+import nl.dichtbij3d.backend.service.PlatformService
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
 
 @RestController
 @RequestMapping("/api/admin")
-class AdminController(private val service: AdminService) {
+class AdminController(
+    private val service: AdminService,
+    private val platformService: PlatformService,
+) {
 
     @GetMapping("/metrics")
     fun metrics(): AdminMetricsDto = service.metrics()
@@ -62,11 +66,46 @@ class AdminController(private val service: AdminService) {
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "50") size: Int,
     ): PageResponse<AuditLogDto> = service.auditLog(page, size)
+
+    // Platform banner & announcements management
+    @GetMapping("/banner")
+    fun getBanner(): PlatformBannerDto = platformService.getBanner()
+
+    @PutMapping("/banner")
+    fun updateBanner(
+        @RequestBody request: PlatformBannerUpdateRequest,
+        @AuthenticationPrincipal principal: AppPrincipal,
+    ): PlatformBannerDto = platformService.updateBanner(request, principal)
+
+    @GetMapping("/announcements")
+    fun getAnnouncements(): List<PlatformAnnouncementDto> = platformService.getAllAnnouncements()
+
+    @PostMapping("/announcements")
+    fun createAnnouncement(
+        @Valid @RequestBody request: PlatformAnnouncementRequest,
+        @AuthenticationPrincipal principal: AppPrincipal,
+    ): PlatformAnnouncementDto = platformService.createAnnouncement(request, principal)
+
+    @PutMapping("/announcements/{id}")
+    fun updateAnnouncement(
+        @PathVariable id: UUID,
+        @Valid @RequestBody request: PlatformAnnouncementRequest,
+        @AuthenticationPrincipal principal: AppPrincipal,
+    ): PlatformAnnouncementDto = platformService.updateAnnouncement(id, request, principal)
+
+    @DeleteMapping("/announcements/{id}")
+    fun deleteAnnouncement(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal principal: AppPrincipal,
+    ): MessageResponse = platformService.deleteAnnouncement(id, principal)
 }
 
 @RestController
 @RequestMapping("/api/public")
-class PublicController(private val service: AdminService) {
+class PublicController(
+    private val service: AdminService,
+    private val platformService: PlatformService,
+) {
 
     /** Lightweight counters used on the public landing page. */
     @GetMapping("/stats")
@@ -79,4 +118,11 @@ class PublicController(private val service: AdminService) {
             "views" to metrics.totalViews,
         )
     }
+
+    @GetMapping("/banner")
+    fun getBanner(): PlatformBannerDto = platformService.getBanner()
+
+    @GetMapping("/announcements")
+    fun getAnnouncements(): List<PlatformAnnouncementDto> = platformService.getActiveAnnouncements()
 }
+

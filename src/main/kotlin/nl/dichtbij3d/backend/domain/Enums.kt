@@ -138,3 +138,5 @@ enum class ReportStatus { OPEN, RESOLVED, DISMISSED }
 /** Status of a user in a conversation (invitation flow for collaboration). */
 enum class ParticipantStatus { INVITED, JOINED, DECLINED }
 
+enum class AnnouncementType { INFO, EVENT, UPDATE, WARNING }
+

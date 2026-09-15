@@ -939,3 +939,75 @@ class AdvertListItem(
     @Column(name = "added_at", nullable = false)
     var addedAt: Instant = Instant.now(),
 )
+
+@Entity
+@Table(name = "platform_banner")
+class PlatformBanner(
+    @Id
+    @Column(columnDefinition = "uuid")
+    var id: UUID = UUID.fromString("00000000-0000-0000-0000-000000000001"),
+
+    @Column(nullable = false)
+    var enabled: Boolean = false,
+
+    @Column(nullable = false, length = 200)
+    var title: String = "",
+
+    @Column(columnDefinition = "text")
+    var subtitle: String? = null,
+
+    @Column(name = "badge_text", length = 100)
+    var badgeText: String? = null,
+
+    @Column(name = "button_text", length = 100)
+    var buttonText: String? = null,
+
+    @Column(name = "link_url", columnDefinition = "text")
+    var linkUrl: String? = null,
+
+    @Column(name = "image_key", columnDefinition = "text")
+    var imageKey: String? = null,
+
+    @Column(name = "image_url", columnDefinition = "text")
+    var imageUrl: String? = null,
+
+    @Column(name = "updated_at", nullable = false)
+    var updatedAt: Instant = Instant.now(),
+)
+
+@Entity
+@Table(name = "platform_announcements")
+class PlatformAnnouncement(
+    @Id
+    @GeneratedValue
+    @Column(columnDefinition = "uuid")
+    var id: UUID? = null,
+
+    @Column(nullable = false, length = 200)
+    var title: String = "",
+
+    @Column(nullable = false, columnDefinition = "text")
+    var content: String = "",
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    var type: AnnouncementType = AnnouncementType.INFO,
+
+    @Column(name = "event_date")
+    var eventDate: Instant? = null,
+
+    @Column(name = "link_url", columnDefinition = "text")
+    var linkUrl: String? = null,
+
+    @Column(name = "link_text", length = 100)
+    var linkText: String? = null,
+
+    @Column(nullable = false)
+    var active: Boolean = true,
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    var createdAt: Instant = Instant.now(),
+
+    @Column(name = "updated_at", nullable = false)
+    var updatedAt: Instant = Instant.now(),
+)

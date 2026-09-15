@@ -618,3 +618,51 @@ data class AdvertListDto(
 data class AdvertListCreateRequest(
     @field:NotBlank @field:Size(min = 1, max = 100) val name: String,
 )
+
+// ---------------------------------------------------------------- platform banner & announcements
+
+data class PlatformBannerDto(
+    val enabled: Boolean,
+    val title: String,
+    val subtitle: String?,
+    val badgeText: String?,
+    val buttonText: String?,
+    val linkUrl: String?,
+    val imageUrl: String?,
+    val imageKey: String?,
+    val updatedAt: Instant,
+)
+
+data class PlatformBannerUpdateRequest(
+    val enabled: Boolean = false,
+    val title: String = "",
+    val subtitle: String? = null,
+    val badgeText: String? = null,
+    val buttonText: String? = null,
+    val linkUrl: String? = null,
+    val imageKey: String? = null,
+    val imageUrl: String? = null,
+)
+
+data class PlatformAnnouncementDto(
+    val id: UUID,
+    val title: String,
+    val content: String,
+    val type: AnnouncementType,
+    val eventDate: Instant?,
+    val linkUrl: String?,
+    val linkText: String?,
+    val active: Boolean,
+    val createdAt: Instant,
+    val updatedAt: Instant,
+)
+
+data class PlatformAnnouncementRequest(
+    @field:NotBlank @field:Size(min = 2, max = 200) val title: String,
+    @field:NotBlank @field:Size(min = 2, max = 5000) val content: String,
+    val type: AnnouncementType = AnnouncementType.INFO,
+    val eventDate: Instant? = null,
+    val linkUrl: String? = null,
+    val linkText: String? = null,
+    val active: Boolean = true,
+)

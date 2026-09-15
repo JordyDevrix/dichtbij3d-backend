@@ -168,4 +168,29 @@ class DtoMapper(
         purchasePriceCents = printer.purchasePriceCents,
         expectedLifetimeHours = printer.expectedLifetimeHours,
     )
+
+    fun banner(banner: PlatformBanner): PlatformBannerDto = PlatformBannerDto(
+        enabled = banner.enabled,
+        title = banner.title,
+        subtitle = banner.subtitle,
+        badgeText = banner.badgeText,
+        buttonText = banner.buttonText,
+        linkUrl = banner.linkUrl,
+        imageUrl = banner.imageUrl ?: storage.publicUrl(banner.imageKey),
+        imageKey = banner.imageKey,
+        updatedAt = banner.updatedAt,
+    )
+
+    fun announcement(a: PlatformAnnouncement): PlatformAnnouncementDto = PlatformAnnouncementDto(
+        id = a.id!!,
+        title = a.title,
+        content = a.content,
+        type = a.type,
+        eventDate = a.eventDate,
+        linkUrl = a.linkUrl,
+        linkText = a.linkText,
+        active = a.active,
+        createdAt = a.createdAt,
+        updatedAt = a.updatedAt,
+    )
 }

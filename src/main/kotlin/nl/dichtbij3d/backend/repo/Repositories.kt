@@ -376,3 +376,12 @@ interface UserBlockRepository : JpaRepository<UserBlock, UUID> {
     @Query("select count(b) > 0 from UserBlock b where (b.blocker.id = :a and b.blocked.id = :b) or (b.blocker.id = :b and b.blocked.id = :a)")
     fun eitherWayBlocked(@Param("a") a: UUID, @Param("b") b: UUID): Boolean
 }
+
+@Repository
+interface PlatformBannerRepository : JpaRepository<PlatformBanner, UUID>
+
+@Repository
+interface PlatformAnnouncementRepository : JpaRepository<PlatformAnnouncement, UUID> {
+    fun findAllByActiveTrueOrderByCreatedAtDesc(): List<PlatformAnnouncement>
+    fun findAllByOrderByCreatedAtDesc(): List<PlatformAnnouncement>
+}
