@@ -29,8 +29,20 @@ class AdminService(
     @Transactional(readOnly = true)
     fun metrics(): AdminMetricsDto {
         val weekAgo = Instant.now().minus(7, ChronoUnit.DAYS)
-        val allUsers = userRepository.count()
-        val disabled = userRepository.countByEnabledFalse()
+        val allUsers = runCatching { userRepository.count() }.getOrDefault(0L)
+        val disabled = runCatching { userRepository.countByEnabledFalse() }.getOrDefault(0L)
+        val newUsers = runCatching { userRepository.countByCreatedAtAfter(weekAgo) }.getOrDefault(0L)
+        val totalAdverts = runCatching { advertRepository.countByDeletedAtIsNull() }.getOrDefault(0L)
+        val newAdverts = runCatching { advertRepository.countByCreatedAtAfter(weekAgo) }.getOrDefault(0L)
+        val openAdverts = runCatching { advertRepository.countByStatusAndDeletedAtIsNull(AdvertStatus.OPEN) }.getOrDefault(0L)
+        val acceptedAdverts = runCatching { advertRepository.countByStatusAndDeletedAtIsNull(AdvertStatus.ACCEPTED) }.getOrDefault(0L)
+        val totalModels = runCatching { modelRepository.countByDeletedAtIsNull() }.getOrDefault(0L)
+        val totalViews = runCatching { advertRepository.totalViews() }.getOrDefault(0L)
+        val openReports = runCatching { reportRepository.countByStatus(ReportStatus.OPEN) }.getOrDefault(0L)
+        val advertsByType = runCatching {
+            advertRepository.countGroupedByType().associate { it.type to it.total }
+        }.getOrDefault(emptyMap())
+
         val signups = try {
             userRepository.findDailySignups().map { DayCount(it.day, it.total) }
         } catch (ex: Exception) {
@@ -45,17 +57,17 @@ class AdminService(
         }
         return AdminMetricsDto(
             totalUsers = allUsers,
-            newUsers7d = userRepository.countByCreatedAtAfter(weekAgo),
-            activeUsers = allUsers - disabled,
+            newUsers7d = newUsers,
+            activeUsers = (allUsers - disabled).coerceAtLeast(0L),
             disabledUsers = disabled,
-            totalAdverts = advertRepository.countByDeletedAtIsNull(),
-            newAdverts7d = advertRepository.countByCreatedAtAfter(weekAgo),
-            openAdverts = advertRepository.countByStatusAndDeletedAtIsNull(AdvertStatus.OPEN),
-            acceptedAdverts = advertRepository.countByStatusAndDeletedAtIsNull(AdvertStatus.ACCEPTED),
-            totalModels = modelRepository.countByDeletedAtIsNull(),
-            totalViews = advertRepository.totalViews(),
-            openReports = reportRepository.countByStatus(ReportStatus.OPEN),
-            advertsByType = advertRepository.countGroupedByType().associate { it.type to it.total },
+            totalAdverts = totalAdverts,
+            newAdverts7d = newAdverts,
+            openAdverts = openAdverts,
+            acceptedAdverts = acceptedAdverts,
+            totalModels = totalModels,
+            totalViews = totalViews,
+            openReports = openReports,
+            advertsByType = advertsByType,
             signupsPerDay = signups,
             advertsPerDay = adverts,
         )

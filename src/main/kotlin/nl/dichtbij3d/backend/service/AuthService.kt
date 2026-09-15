@@ -172,7 +172,21 @@ class AuthService(
             ?: throw ApiException.unauthorized("Invalid refresh token")
 
         if (stored.revokedAt != null) {
-            // Reuse of a rotated token => likely theft, kill the whole family.
+            // Check for rotation grace period (RFC 6819) to accommodate concurrent / network race conditions
+            val isWithinGracePeriod = stored.revokedAt!!.isAfter(Instant.now().minusSeconds(30))
+            if (isWithinGracePeriod && stored.replacedBy != null) {
+                val user = userRepository.findById(stored.userId).orElseThrow { ApiException.unauthorized() }
+                if (user.enabled && user.deletedAt == null) {
+                    return AuthResponse(
+                        accessToken = tokenService.createAccessToken(user),
+                        refreshToken = null,
+                        expiresIn = tokenService.accessTokenTtlSeconds,
+                        user = mapper.profile(user),
+                    )
+                }
+            }
+
+            // Reuse of a rotated token outside the grace period => likely theft, kill the whole family.
             // Runs in its own transaction so it survives the exception below.
             requiresNew.executeWithoutResult {
                 refreshTokenRepository.revokeFamily(stored.familyId, Instant.now())

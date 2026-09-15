@@ -153,7 +153,7 @@ interface AdvertRepository : JpaRepository<Advert, UUID>, JpaSpecificationExecut
     @Query("update Advert a set a.viewCount = a.viewCount + 1 where a.id = :id")
     fun incrementViewCount(@Param("id") id: UUID)
 
-    @Query("select coalesce(sum(a.viewCount), 0) from Advert a where a.deletedAt is null")
+    @Query("select coalesce(sum(cast(a.viewCount as long)), 0L) from Advert a where a.deletedAt is null")
     fun totalViews(): Long
 
     fun findAllByAuthorIdAndDeletedAtIsNullOrderByCreatedAtDesc(authorId: UUID, pageable: Pageable): Page<Advert>
