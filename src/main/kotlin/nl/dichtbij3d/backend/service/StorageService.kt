@@ -92,6 +92,48 @@ class StorageService(private val props: StorageProperties) {
         null
     }
 
+    fun size(key: String): Long? = try {
+        val minio = client
+        if (minio != null) {
+            minio.statObject(io.minio.StatObjectArgs.builder().bucket(props.bucket).`object`(key).build()).size()
+        } else {
+            val path = resolveLocal(key)
+            if (Files.exists(path)) Files.size(path) else null
+        }
+    } catch (ex: Exception) {
+        null
+    }
+
+    /**
+     * Attempts to read the object with fallback between adverts/ and listings/ prefixes
+     * (handling legacy keys vs adblocker-friendly keys).
+     * Returns a pair of InputStream and file size (if determinable).
+     */
+    fun readWithAlias(key: String): Pair<InputStream, Long?>? {
+        val candidates = listOfNotNull(
+            key,
+            if (key.startsWith("listings/")) key.replaceFirst("listings/", "adverts/") else null,
+            if (key.startsWith("adverts/")) key.replaceFirst("adverts/", "listings/") else null
+        ).distinct()
+
+        for (candidate in candidates) {
+            val stream = read(candidate)
+            if (stream != null) {
+                return Pair(stream, size(candidate))
+            }
+        }
+        return null
+    }
+
+    /**
+     * Reads all bytes of the object, checking aliases if necessary.
+     */
+    fun readBytesWithAlias(key: String): ByteArray? {
+        val (stream, _) = readWithAlias(key) ?: return null
+        return stream.use { it.readBytes() }
+    }
+
+
     fun delete(key: String) {
         try {
             val minio = client

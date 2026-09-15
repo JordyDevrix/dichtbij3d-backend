@@ -113,3 +113,7 @@ dichtbij3d:
     frontend-url: ${FRONTEND_URL:${PUBLIC_URL:http://localhost:8081}}
     reset-token-ttl: ${MAIL_RESET_TOKEN_TTL:PT30M}
     mfa-token-ttl: ${MAIL_MFA_TOKEN_TTL:PT10M}
+  share:
+    public-url: ${PUBLIC_URL:${SITE_URL:}}
+
+

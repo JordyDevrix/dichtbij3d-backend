@@ -115,9 +115,6 @@ class AuthService(
                 }
             } else {
                 val mfaToken = tokenService.createMfaChallengeToken(user)
-                if (user.emailMfaEnabled) {
-                    issueAndSendEmailMfaCode(user, "LOGIN")
-                }
                 val methods = buildSet {
                     if (user.totpEnabled) add("totp")
                     if (user.emailMfaEnabled) add("email")
@@ -126,6 +123,7 @@ class AuthService(
                     mfaRequired = true,
                     mfaToken = mfaToken,
                     mfaMethods = methods,
+                    maskedEmail = if (user.emailMfaEnabled) maskEmail(user.email) else null,
                 )
             }
         }
@@ -475,6 +473,19 @@ class AuthService(
         refreshTokenRepository.deleteExpired(now)
         passwordResetTokenRepository.deleteExpiredOrUsed(now)
         emailMfaTokenRepository.deleteExpiredOrUsed(now)
+    }
+
+    private fun maskEmail(email: String): String {
+        val atIndex = email.indexOf('@')
+        if (atIndex <= 0 || atIndex == email.length - 1) return email
+        val name = email.substring(0, atIndex)
+        val domain = email.substring(atIndex + 1)
+        val maskedName = when {
+            name.length <= 1 -> "*"
+            name.length == 2 -> "${name[0]}*"
+            else -> "${name.first()}***${name.last()}"
+        }
+        return "$maskedName@$domain"
     }
 
     companion object {

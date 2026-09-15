@@ -105,7 +105,7 @@ class EmailMfaTest {
     }
 
     @Test
-    fun `login with emailMfaEnabled requires MFA and dispatches email code`() {
+    fun `login with emailMfaEnabled requires MFA and does not dispatch email code`() {
         val user = User(
             id = UUID.randomUUID(),
             email = "user@example.com",
@@ -116,8 +116,6 @@ class EmailMfaTest {
         `when`(userRepository.findByEmail("user@example.com")).thenReturn(user)
         `when`(passwordEncoder.matches("Password123!", "hashed")).thenReturn(true)
         `when`(tokenService.createMfaChallengeToken(user)).thenReturn("mfa-challenge-jwt")
-        `when`(tokenService.hash(anyNonNull(""))).thenAnswer { "hash-" + it.getArgument<String>(0) }
-        `when`(emailMfaTokenRepository.findAllByUserIdAndPurposeAndUsedFalse(user.id!!, "LOGIN")).thenReturn(emptyList())
 
         val response = authService.login(
             LoginRequest(email = "user@example.com", password = "Password123!"),
@@ -128,6 +126,36 @@ class EmailMfaTest {
         assertEquals("mfa-challenge-jwt", response.mfaToken)
         assertTrue(response.mfaMethods.contains("email"))
         assertFalse(response.mfaMethods.contains("totp"))
+        assertEquals("u***r@example.com", response.maskedEmail)
+
+        verify(emailService, never()).sendMfaCodeEmail(anyNonNull(""), anyNonNull(""), anyNonNull(""), anyNonNull(""))
+    }
+
+    @Test
+    fun `sendLoginEmailMfaCode dispatches email code when requested`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            email = "user@example.com",
+            passwordHash = "hashed",
+            displayName = "User",
+            emailMfaEnabled = true,
+        )
+        `when`(tokenService.parse("mfa-challenge-jwt")).thenReturn(
+            ParsedToken(
+                userId = userId,
+                email = "user@example.com",
+                displayName = "User",
+                roles = setOf(Role.CUSTOMER),
+                type = TokenType.MFA,
+            )
+        )
+        `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
+        `when`(tokenService.hash(anyNonNull(""))).thenAnswer { "hash-" + it.getArgument<String>(0) }
+        `when`(emailMfaTokenRepository.findAllByUserIdAndPurposeAndUsedFalse(user.id!!, "LOGIN")).thenReturn(emptyList())
+
+        val res = authService.sendLoginEmailMfaCode("mfa-challenge-jwt")
+        assertTrue(res.message.contains("sent to your email"))
 
         val codeCaptor = ArgumentCaptor.forClass(String::class.java)
         verify(emailService).sendMfaCodeEmail(

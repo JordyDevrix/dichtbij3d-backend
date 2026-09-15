@@ -292,10 +292,7 @@ class FileController(private val storage: StorageService) {
         val key = request.requestURI.substringAfter("/api/files/")
             .let { java.net.URLDecoder.decode(it, Charsets.UTF_8) }
         if (key.isBlank() || key.contains("..")) throw ApiException.badRequest("Invalid file key")
-        val stream = storage.read(key)
-            ?: (if (key.startsWith("listings/")) storage.read(key.replaceFirst("listings/", "adverts/")) else null)
-            ?: (if (key.startsWith("adverts/")) storage.read(key.replaceFirst("adverts/", "listings/")) else null)
-            ?: throw ApiException.notFound("File")
+        val (stream, size) = storage.readWithAlias(key) ?: throw ApiException.notFound("File")
         val contentType = when (key.substringAfterLast('.', "").lowercase()) {
             "png" -> MediaType.IMAGE_PNG
             "jpg", "jpeg" -> MediaType.IMAGE_JPEG
@@ -306,10 +303,13 @@ class FileController(private val storage: StorageService) {
             "heif" -> MediaType.parseMediaType("image/heif")
             else -> MediaType.APPLICATION_OCTET_STREAM
         }
-        return ResponseEntity.ok()
+        val builder = ResponseEntity.ok()
             .contentType(contentType)
             .cacheControl(org.springframework.http.CacheControl.maxAge(java.time.Duration.ofDays(7)).cachePublic())
-            .body(InputStreamResource(stream))
+        if (size != null && size > 0) {
+            builder.contentLength(size)
+        }
+        return builder.body(InputStreamResource(stream))
     }
 }
 

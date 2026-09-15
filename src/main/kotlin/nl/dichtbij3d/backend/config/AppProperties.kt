@@ -54,3 +54,9 @@ data class MailProperties(
     val mfaTokenTtl: Duration = Duration.ofMinutes(10),
 )
 
+@ConfigurationProperties(prefix = "dichtbij3d.share")
+data class ShareProperties(
+    val publicUrl: String? = null,
+)
+
+

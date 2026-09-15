@@ -49,6 +49,7 @@ data class AuthResponse(
     val mfaRequired: Boolean = false,
     val mfaToken: String? = null,
     val mfaMethods: Set<String> = emptySet(),
+    val maskedEmail: String? = null,
 )
 
 data class TotpSetupResponse(val secret: String, val otpauthUri: String)
