@@ -33,7 +33,7 @@ class PlatformService(
                     enabled = false,
                     title = "Welkom bij Dichtbij3D",
                     subtitle = "Vind 3D-printers en ontwerpers bij jou in de buurt of verkoop je eigen creaties.",
-                    badgeText = "Nieuw",
+                    badgeText = null,
                     buttonText = "Ontdek marktplaats",
                     linkUrl = "/marketplace",
                 )
