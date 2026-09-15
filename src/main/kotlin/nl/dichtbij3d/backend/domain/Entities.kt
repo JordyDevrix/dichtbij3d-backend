@@ -69,6 +69,12 @@ class User(
     @Column(name = "email_mfa_enabled", nullable = false)
     var emailMfaEnabled: Boolean = false,
 
+    @Column(name = "failed_mfa_attempts", nullable = false)
+    var failedMfaAttempts: Int = 0,
+
+    @Column(name = "mfa_locked_until")
+    var mfaLockedUntil: Instant? = null,
+
     @Column(name = "last_login_at")
     var lastLoginAt: Instant? = null,
 

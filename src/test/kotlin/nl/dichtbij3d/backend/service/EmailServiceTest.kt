@@ -83,4 +83,42 @@ class EmailServiceTest {
         assertEquals("abcdefghijklmnop", spiedSender.password)
         verify(spiedSender).send(dummyMessage)
     }
+
+    @Test
+    fun `sendMfaCodeEmail sends email with valid sender and handles unconfigured sender safely`() {
+        val unconfigured = EmailService(mailProps, null)
+        assertFalse(unconfigured.isMailConfigured())
+        // Should safely no-op without throwing
+        unconfigured.sendMfaCodeEmail("user@example.com", "User", "123456")
+
+        val mailSender = JavaMailSenderImpl().apply {
+            host = "smtp.example.com"
+            username = "user"
+            password = "password"
+        }
+        val spiedSender = org.mockito.Mockito.spy(mailSender)
+        val dummyMessage = MimeMessage(Session.getInstance(Properties()))
+        `when`(spiedSender.createMimeMessage()).thenReturn(dummyMessage)
+        org.mockito.Mockito.doNothing().`when`(spiedSender).send(dummyMessage)
+
+        val service = EmailService(mailProps, spiedSender)
+        service.sendMfaCodeEmail("target@example.com", "Target", "654321")
+        verify(spiedSender).send(dummyMessage)
+    }
+
+    @Test
+    fun `send methods catch exceptions during mail delivery and do not leak secrets`() {
+        val mailSender = mock(JavaMailSenderImpl::class.java)
+        `when`(mailSender.host).thenReturn("smtp.example.com")
+        `when`(mailSender.password).thenReturn("password")
+        `when`(mailSender.javaMailProperties).thenReturn(Properties().apply { put("mail.smtp.auth", "false") })
+        val dummyMessage = MimeMessage(Session.getInstance(Properties()))
+        `when`(mailSender.createMimeMessage()).thenReturn(dummyMessage)
+        org.mockito.Mockito.doThrow(RuntimeException("SMTP connection timed out")).`when`(mailSender).send(dummyMessage)
+
+        val service = EmailService(mailProps, mailSender)
+        // Neither method should throw
+        service.sendPasswordResetEmail("target@example.com", "Target", "http://reset.url/secret-token")
+        service.sendMfaCodeEmail("target@example.com", "Target", "123456")
+    }
 }

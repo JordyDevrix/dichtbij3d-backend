@@ -26,6 +26,7 @@ import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.transaction.annotation.Transactional
 import java.security.SecureRandom
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 @Service
@@ -92,6 +93,7 @@ class AuthService(
 
         val mfaRequired = user.totpEnabled || user.emailMfaEnabled
         if (mfaRequired) {
+            checkMfaLockout(user)
             val code = (request.mfaCode ?: request.totpCode)?.trim()?.ifBlank { null }
             if (!code.isNullOrBlank()) {
                 var verified = false
@@ -111,8 +113,9 @@ class AuthService(
                     }
                 }
                 if (!verified) {
-                    throw ApiException.unauthorized("Invalid verification code")
+                    handleFailedMfaAttempt(user)
                 }
+                handleSuccessfulMfa(user)
             } else {
                 val mfaToken = tokenService.createMfaChallengeToken(user)
                 val methods = buildSet {
@@ -140,6 +143,8 @@ class AuthService(
             throw ApiException.badRequest("Two-factor authentication is not enabled")
         }
 
+        checkMfaLockout(user)
+
         val code = request.code.trim()
         var verified = false
 
@@ -160,8 +165,46 @@ class AuthService(
             }
         }
 
-        if (!verified) throw ApiException.unauthorized("Invalid verification code")
+        if (!verified) {
+            handleFailedMfaAttempt(user)
+        }
+        handleSuccessfulMfa(user)
         return issueTokens(user, httpRequest)
+    }
+
+    private fun checkMfaLockout(user: User) {
+        val lockedUntil = user.mfaLockedUntil
+        if (lockedUntil != null) {
+            if (lockedUntil.isAfter(Instant.now())) {
+                val remainingMinutes = java.time.Duration.between(Instant.now(), lockedUntil).toMinutes() + 1
+                throw ApiException.forbidden("Too many failed 2FA verification attempts. Account is temporarily locked. Please try again in $remainingMinutes minutes.")
+            } else {
+                user.mfaLockedUntil = null
+                user.failedMfaAttempts = 0
+                userRepository.save(user)
+            }
+        }
+    }
+
+    private fun handleFailedMfaAttempt(user: User): Nothing {
+        user.failedMfaAttempts++
+        if (user.failedMfaAttempts >= MAX_MFA_ATTEMPTS) {
+            user.mfaLockedUntil = Instant.now().plus(15, ChronoUnit.MINUTES)
+            user.failedMfaAttempts = 0
+            userRepository.save(user)
+            throw ApiException.forbidden("Too many failed 2FA verification attempts. Account is temporarily locked for 15 minutes.")
+        }
+        val remaining = MAX_MFA_ATTEMPTS - user.failedMfaAttempts
+        userRepository.save(user)
+        throw ApiException.unauthorized("Invalid verification code. $remaining attempt${if (remaining == 1) "" else "s"} remaining.")
+    }
+
+    private fun handleSuccessfulMfa(user: User) {
+        if (user.failedMfaAttempts > 0 || user.mfaLockedUntil != null) {
+            user.failedMfaAttempts = 0
+            user.mfaLockedUntil = null
+            userRepository.save(user)
+        }
     }
 
     @Transactional

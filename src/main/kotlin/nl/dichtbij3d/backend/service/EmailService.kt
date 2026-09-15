@@ -43,16 +43,13 @@ class EmailService(
 
     /**
      * Dispatches a password reset email to the user.
-     * If [JavaMailSender] is not configured (e.g. in local development without SMTP,
-     * or when credentials are missing), the reset link is printed to the server logs.
      */
     fun sendPasswordResetEmail(toEmail: String, displayName: String, resetUrl: String, locale: String = "nl") {
         if (!isMailConfigured()) {
             log.warn(
-                "[DEV MODE / SMTP not configured] Password reset requested for '{}' ({}). Reset URL:\n{}",
+                "[SMTP not configured] Password reset email requested for '{}' ({}) but mail delivery is not configured.",
                 displayName,
                 toEmail,
-                resetUrl,
             )
             return
         }
@@ -77,10 +74,9 @@ class EmailService(
             log.info("Password reset email successfully sent from {} to {}", props.from, toEmail)
         } catch (ex: Exception) {
             log.error(
-                "Failed to send password reset email to {}: {}. Reset URL for manual use:\n{}",
+                "Failed to send password reset email to {}: {}",
                 toEmail,
                 ex.message,
-                resetUrl,
                 ex,
             )
         }
@@ -88,15 +84,13 @@ class EmailService(
 
     /**
      * Dispatches a two-factor authentication (MFA) verification code to the user's email.
-     * If SMTP is not configured, the code is printed to the server logs.
      */
     fun sendMfaCodeEmail(toEmail: String, displayName: String, code: String, locale: String = "nl") {
         if (!isMailConfigured()) {
             log.warn(
-                "[DEV MODE / SMTP not configured] 2FA/MFA verification code for '{}' ({}): {}",
+                "[SMTP not configured] MFA verification code requested for '{}' ({}) but mail delivery is not configured.",
                 displayName,
                 toEmail,
-                code,
             )
             return
         }
@@ -121,10 +115,9 @@ class EmailService(
             log.info("MFA verification code email successfully sent from {} to {}", props.from, toEmail)
         } catch (ex: Exception) {
             log.error(
-                "Failed to send MFA email to {}: {}. Verification code for manual use: {}",
+                "Failed to send MFA email to {}: {}",
                 toEmail,
                 ex.message,
-                code,
                 ex,
             )
         }

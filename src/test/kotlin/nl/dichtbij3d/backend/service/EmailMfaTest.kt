@@ -293,7 +293,7 @@ class EmailMfaTest {
         val ex = assertThrows(ApiException::class.java) {
             authService.verifyMfa(MfaVerifyRequest(mfaToken = "valid-mfa-token", code = "999999"), null)
         }
-        assertEquals("Invalid verification code", ex.message)
+        assertTrue(ex.message!!.startsWith("Invalid verification code"))
         assertEquals(1, token.attempts)
         assertFalse(token.used)
         verify(emailMfaTokenRepository).save(token)
@@ -336,7 +336,7 @@ class EmailMfaTest {
         val ex = assertThrows(ApiException::class.java) {
             authService.verifyMfa(MfaVerifyRequest(mfaToken = "valid-mfa-token", code = "999999"), null)
         }
-        assertEquals("Invalid verification code", ex.message)
+        assertTrue(ex.message!!.startsWith("Invalid verification code"))
         assertEquals(5, token.attempts)
         assertTrue(token.used)
         verify(emailMfaTokenRepository).save(token)
@@ -431,7 +431,63 @@ class EmailMfaTest {
         val ex = assertThrows(ApiException::class.java) {
             authService.verifyMfa(MfaVerifyRequest(mfaToken = "valid-mfa-token", code = "123456"), null)
         }
-        assertEquals("Invalid verification code", ex.message)
+        assertTrue(ex.message!!.startsWith("Invalid verification code"))
+    }
+
+    @Test
+    fun `verifyMfa locks user out after 5 failed TOTP attempts`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            email = "user@example.com",
+            passwordHash = "hashed",
+            displayName = "User",
+            totpEnabled = true,
+            totpSecret = "MYSECRET",
+            failedMfaAttempts = 4,
+            emailMfaEnabled = false,
+        )
+
+        `when`(tokenService.parse("valid-mfa-token")).thenReturn(
+            ParsedToken(userId = userId, email = "user@example.com", displayName = "User", roles = setOf(Role.CUSTOMER), type = TokenType.MFA)
+        )
+        `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
+        `when`(totpService.verify(eqNonNull("MYSECRET"), eqNonNull("000000"), isNull(), anyLong())).thenReturn(null)
+
+        val ex = assertThrows(ApiException::class.java) {
+            authService.verifyMfa(MfaVerifyRequest(mfaToken = "valid-mfa-token", code = "000000"), null)
+        }
+        assertEquals(403, ex.status.value())
+        assertTrue(ex.message!!.contains("temporarily locked for 15 minutes"))
+        assertNotNull(user.mfaLockedUntil)
+        assertEquals(0, user.failedMfaAttempts)
+        verify(userRepository).save(user)
+    }
+
+    @Test
+    fun `verifyMfa rejects attempts when user is currently locked out`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            email = "user@example.com",
+            passwordHash = "hashed",
+            displayName = "User",
+            totpEnabled = true,
+            totpSecret = "MYSECRET",
+            mfaLockedUntil = Instant.now().plusSeconds(600),
+            emailMfaEnabled = false,
+        )
+
+        `when`(tokenService.parse("valid-mfa-token")).thenReturn(
+            ParsedToken(userId = userId, email = "user@example.com", displayName = "User", roles = setOf(Role.CUSTOMER), type = TokenType.MFA)
+        )
+        `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
+
+        val ex = assertThrows(ApiException::class.java) {
+            authService.verifyMfa(MfaVerifyRequest(mfaToken = "valid-mfa-token", code = "123456"), null)
+        }
+        assertEquals(403, ex.status.value())
+        assertTrue(ex.message!!.contains("Account is temporarily locked"))
     }
 
     @Test
