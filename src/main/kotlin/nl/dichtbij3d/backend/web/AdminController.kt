@@ -98,6 +98,16 @@ class AdminController(
         @PathVariable id: UUID,
         @AuthenticationPrincipal principal: AppPrincipal,
     ): MessageResponse = platformService.deleteAnnouncement(id, principal)
+
+    // Platform maintenance mode management
+    @GetMapping("/maintenance")
+    fun getMaintenance(): MaintenanceStatusDto = platformService.getMaintenanceStatus()
+
+    @PutMapping("/maintenance")
+    fun updateMaintenance(
+        @Valid @RequestBody request: MaintenanceUpdateRequest,
+        @AuthenticationPrincipal principal: AppPrincipal,
+    ): MaintenanceStatusDto = platformService.updateMaintenance(request, principal)
 }
 
 @RestController
@@ -124,5 +134,9 @@ class PublicController(
 
     @GetMapping("/announcements")
     fun getAnnouncements(): List<PlatformAnnouncementDto> = platformService.getActiveAnnouncements()
+
+    @GetMapping("/maintenance")
+    fun getMaintenance(): MaintenanceStatusDto = platformService.getMaintenanceStatus()
 }
+
 

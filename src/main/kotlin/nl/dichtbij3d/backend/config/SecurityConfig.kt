@@ -3,6 +3,8 @@ package nl.dichtbij3d.backend.config
 import com.fasterxml.jackson.databind.ObjectMapper
 import jakarta.servlet.http.HttpServletResponse
 import nl.dichtbij3d.backend.security.JwtAuthenticationFilter
+import nl.dichtbij3d.backend.security.MaintenanceModeFilter
+import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
@@ -23,6 +25,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 @EnableMethodSecurity
 class SecurityConfig(
     private val jwtAuthenticationFilter: JwtAuthenticationFilter,
+    private val maintenanceModeFilter: MaintenanceModeFilter,
     private val corsProperties: CorsProperties,
     private val objectMapper: ObjectMapper,
 ) {
@@ -76,9 +79,18 @@ class SecurityConfig(
                 ex.accessDeniedHandler { _, response, _ -> writeError(response, 403, "forbidden") }
             }
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter::class.java)
+            .addFilterAfter(maintenanceModeFilter, JwtAuthenticationFilter::class.java)
 
         return http.build()
     }
+
+    @Bean
+    fun jwtFilterRegistration(filter: JwtAuthenticationFilter): FilterRegistrationBean<JwtAuthenticationFilter> =
+        FilterRegistrationBean(filter).apply { isEnabled = false }
+
+    @Bean
+    fun maintenanceFilterRegistration(filter: MaintenanceModeFilter): FilterRegistrationBean<MaintenanceModeFilter> =
+        FilterRegistrationBean(filter).apply { isEnabled = false }
 
     private fun writeError(response: HttpServletResponse, status: Int, code: String) {
         response.status = status

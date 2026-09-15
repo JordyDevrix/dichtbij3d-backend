@@ -666,3 +666,21 @@ data class PlatformAnnouncementRequest(
     val linkText: String? = null,
     val active: Boolean = true,
 )
+
+// ---------------------------------------------------------------- platform maintenance mode
+
+data class MaintenanceStatusDto(
+    val enabled: Boolean,
+    val title: String,
+    val message: String,
+    val until: Instant?,
+    val updatedAt: Instant,
+)
+
+data class MaintenanceUpdateRequest(
+    val enabled: Boolean,
+    @field:Size(max = 200) val title: String? = null,
+    @field:Size(max = 5000) val message: String? = null,
+    val until: Instant? = null,
+)
+

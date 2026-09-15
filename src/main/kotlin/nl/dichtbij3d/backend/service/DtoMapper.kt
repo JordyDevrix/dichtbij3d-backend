@@ -193,4 +193,13 @@ class DtoMapper(
         createdAt = a.createdAt,
         updatedAt = a.updatedAt,
     )
+
+    fun maintenance(settings: PlatformSettings): MaintenanceStatusDto = MaintenanceStatusDto(
+        enabled = settings.maintenanceEnabled,
+        title = settings.maintenanceTitle,
+        message = settings.maintenanceMessage,
+        until = settings.maintenanceUntil,
+        updatedAt = settings.updatedAt,
+    )
 }
+

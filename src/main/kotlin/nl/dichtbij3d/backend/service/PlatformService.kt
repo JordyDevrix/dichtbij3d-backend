@@ -3,10 +3,12 @@ package nl.dichtbij3d.backend.service
 import nl.dichtbij3d.backend.domain.AuditLogEntry
 import nl.dichtbij3d.backend.domain.PlatformAnnouncement
 import nl.dichtbij3d.backend.domain.PlatformBanner
+import nl.dichtbij3d.backend.domain.PlatformSettings
 import nl.dichtbij3d.backend.dto.*
 import nl.dichtbij3d.backend.repo.AuditLogRepository
 import nl.dichtbij3d.backend.repo.PlatformAnnouncementRepository
 import nl.dichtbij3d.backend.repo.PlatformBannerRepository
+import nl.dichtbij3d.backend.repo.PlatformSettingsRepository
 import nl.dichtbij3d.backend.security.AppPrincipal
 import nl.dichtbij3d.backend.web.ApiException
 import org.springframework.stereotype.Service
@@ -18,11 +20,63 @@ import java.util.UUID
 class PlatformService(
     private val bannerRepository: PlatformBannerRepository,
     private val announcementRepository: PlatformAnnouncementRepository,
+    private val settingsRepository: PlatformSettingsRepository,
     private val auditLogRepository: AuditLogRepository,
     private val mapper: DtoMapper,
 ) {
 
     private val bannerId = UUID.fromString("00000000-0000-0000-0000-000000000001")
+    private val settingsId = UUID.fromString("00000000-0000-0000-0000-000000000002")
+
+    @Transactional
+    fun getOrCreateSettings(): PlatformSettings {
+        return settingsRepository.findById(settingsId).orElseGet {
+            settingsRepository.save(
+                PlatformSettings(
+                    id = settingsId,
+                    maintenanceEnabled = false,
+                    maintenanceTitle = "Tijdelijk offline voor onderhoud",
+                    maintenanceMessage = "Dichtbij3D is momenteel niet bereikbaar wegens gepland onderhoud. We zijn zo snel mogelijk weer terug!",
+                    maintenanceUntil = null,
+                )
+            )
+        }
+    }
+
+    @Transactional(readOnly = true)
+    fun getMaintenanceStatus(): MaintenanceStatusDto = mapper.maintenance(getOrCreateSettings())
+
+    @Transactional(readOnly = true)
+    fun isMaintenanceEnabled(): Boolean {
+        return settingsRepository.findById(settingsId).map { it.maintenanceEnabled }.orElse(false)
+    }
+
+    @Transactional
+    fun updateMaintenance(request: MaintenanceUpdateRequest, actor: AppPrincipal): MaintenanceStatusDto {
+        val settings = getOrCreateSettings()
+        val previousState = settings.maintenanceEnabled
+        settings.maintenanceEnabled = request.enabled
+        request.title?.trim()?.ifBlank { null }?.let { settings.maintenanceTitle = it }
+        request.message?.trim()?.ifBlank { null }?.let { settings.maintenanceMessage = it }
+        settings.maintenanceUntil = request.until
+        settings.updatedAt = Instant.now()
+        val saved = settingsRepository.save(settings)
+
+        auditLogRepository.save(
+            AuditLogEntry(
+                actorId = actor.id,
+                action = if (request.enabled != previousState) {
+                    if (request.enabled) "MAINTENANCE_MODE_ACTIVATED" else "MAINTENANCE_MODE_DEACTIVATED"
+                } else {
+                    "MAINTENANCE_SETTINGS_UPDATED"
+                },
+                targetType = "PLATFORM_SETTINGS",
+                targetId = settingsId,
+                detail = "enabled=${saved.maintenanceEnabled}, title=${saved.maintenanceTitle}",
+            )
+        )
+        return mapper.maintenance(saved)
+    }
 
     @Transactional
     fun getOrCreateBanner(): PlatformBanner {

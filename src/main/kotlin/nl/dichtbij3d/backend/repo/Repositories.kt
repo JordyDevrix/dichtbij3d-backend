@@ -385,3 +385,7 @@ interface PlatformAnnouncementRepository : JpaRepository<PlatformAnnouncement, U
     fun findAllByActiveTrueOrderByCreatedAtDesc(): List<PlatformAnnouncement>
     fun findAllByOrderByCreatedAtDesc(): List<PlatformAnnouncement>
 }
+
+@Repository
+interface PlatformSettingsRepository : JpaRepository<PlatformSettings, UUID>
+

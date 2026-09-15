@@ -1011,3 +1011,26 @@ class PlatformAnnouncement(
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now(),
 )
+
+@Entity
+@Table(name = "platform_settings")
+class PlatformSettings(
+    @Id
+    val id: UUID = UUID.fromString("00000000-0000-0000-0000-000000000002"),
+
+    @Column(name = "maintenance_enabled", nullable = false)
+    var maintenanceEnabled: Boolean = false,
+
+    @Column(name = "maintenance_title", nullable = false, length = 200)
+    var maintenanceTitle: String = "Tijdelijk offline voor onderhoud",
+
+    @Column(name = "maintenance_message", nullable = false, columnDefinition = "text")
+    var maintenanceMessage: String = "Dichtbij3D is momenteel niet bereikbaar wegens gepland onderhoud. We zijn zo snel mogelijk weer terug!",
+
+    @Column(name = "maintenance_until")
+    var maintenanceUntil: Instant? = null,
+
+    @Column(name = "updated_at", nullable = false)
+    var updatedAt: Instant = Instant.now(),
+)
+
