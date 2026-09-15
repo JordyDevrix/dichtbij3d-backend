@@ -43,7 +43,7 @@ class PlatformService(
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     fun getMaintenanceStatus(): MaintenanceStatusDto = mapper.maintenance(getOrCreateSettings())
 
     @Transactional(readOnly = true)
