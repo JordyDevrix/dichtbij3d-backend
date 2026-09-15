@@ -1,6 +1,5 @@
 package nl.dichtbij3d.backend.service
 
-import jakarta.persistence.EntityManager
 import nl.dichtbij3d.backend.domain.*
 import nl.dichtbij3d.backend.dto.*
 import nl.dichtbij3d.backend.repo.*
@@ -24,7 +23,6 @@ class AdminService(
     private val auditLogRepository: AuditLogRepository,
     private val refreshTokenRepository: RefreshTokenRepository,
     private val notifications: NotificationService,
-    private val entityManager: EntityManager,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -33,6 +31,18 @@ class AdminService(
         val weekAgo = Instant.now().minus(7, ChronoUnit.DAYS)
         val allUsers = userRepository.count()
         val disabled = userRepository.countByEnabledFalse()
+        val signups = try {
+            userRepository.findDailySignups().map { DayCount(it.day, it.total) }
+        } catch (ex: Exception) {
+            log.error("Failed to fetch daily signups: {}", ex.message)
+            emptyList()
+        }
+        val adverts = try {
+            advertRepository.findDailyAdverts().map { DayCount(it.day, it.total) }
+        } catch (ex: Exception) {
+            log.error("Failed to fetch daily adverts: {}", ex.message)
+            emptyList()
+        }
         return AdminMetricsDto(
             totalUsers = allUsers,
             newUsers7d = userRepository.countByCreatedAtAfter(weekAgo),
@@ -46,40 +56,9 @@ class AdminService(
             totalViews = advertRepository.totalViews(),
             openReports = reportRepository.countByStatus(ReportStatus.OPEN),
             advertsByType = advertRepository.countGroupedByType().associate { it.type to it.total },
-            signupsPerDay = dailySeries("users", null),
-            advertsPerDay = dailySeries("adverts", "deleted_at is null"),
+            signupsPerDay = signups,
+            advertsPerDay = adverts,
         )
-    }
-
-    private fun dailySeries(table: String, extraWhere: String?): List<DayCount> {
-        return try {
-            val where = extraWhere?.let { " and t.$it" } ?: ""
-            val sql = """
-                select to_char(d.day, 'YYYY-MM-DD') as day, count(t.id) as total
-                from generate_series(date_trunc('day', now()) - interval '29 days', date_trunc('day', now()), interval '1 day') as d(day)
-                left join $table t on date_trunc('day', t.created_at) = d.day$where
-                group by d.day order by d.day
-            """.trimIndent()
-            val rows = entityManager.createNativeQuery(sql).resultList
-            rows.mapNotNull { row ->
-                when (row) {
-                    is Array<*> -> {
-                        val day = row[0]?.toString() ?: return@mapNotNull null
-                        val count = (row[1] as? Number)?.toLong() ?: 0L
-                        DayCount(day, count)
-                    }
-                    is List<*> -> {
-                        val day = row[0]?.toString() ?: return@mapNotNull null
-                        val count = (row[1] as? Number)?.toLong() ?: 0L
-                        DayCount(day, count)
-                    }
-                    else -> null
-                }
-            }
-        } catch (ex: Exception) {
-            log.error("Failed to calculate daily series for {}: {}", table, ex.message)
-            emptyList()
-        }
     }
 
     @Transactional(readOnly = true)

@@ -371,7 +371,7 @@ class EmailMfaTest {
     }
 
     @Test
-    fun `disableEmailMfa disables email MFA`() {
+    fun `disableEmailMfa throws when neither password nor code is provided`() {
         val userId = UUID.randomUUID()
         val user = User(
             id = userId,
@@ -382,8 +382,157 @@ class EmailMfaTest {
         )
         `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
 
-        authService.disableEmailMfa(userId)
+        val ex = assertThrows(ApiException::class.java) {
+            authService.disableEmailMfa(userId)
+        }
+        assertTrue(ex.message.contains("Verification code or current password is required"))
+        assertTrue(user.emailMfaEnabled)
+        verify(userRepository, never()).save(user)
+    }
+
+    @Test
+    fun `disableEmailMfa succeeds with valid password`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            email = "user@example.com",
+            passwordHash = "hashed",
+            displayName = "User",
+            emailMfaEnabled = true,
+        )
+        `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
+        `when`(passwordEncoder.matches("Password123!", "hashed")).thenReturn(true)
+
+        authService.disableEmailMfa(userId, password = "Password123!")
         assertFalse(user.emailMfaEnabled)
         verify(userRepository).save(user)
+    }
+
+    @Test
+    fun `disableEmailMfa fails with incorrect password`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            email = "user@example.com",
+            passwordHash = "hashed",
+            displayName = "User",
+            emailMfaEnabled = true,
+        )
+        `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
+        `when`(passwordEncoder.matches("WrongPassword!", "hashed")).thenReturn(false)
+
+        val ex = assertThrows(ApiException::class.java) {
+            authService.disableEmailMfa(userId, password = "WrongPassword!")
+        }
+        assertEquals("Your current password is incorrect", ex.message)
+        assertTrue(user.emailMfaEnabled)
+        verify(userRepository, never()).save(user)
+    }
+
+    @Test
+    fun `disableEmailMfa succeeds with valid email code and marks token used`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            email = "user@example.com",
+            passwordHash = "hashed",
+            displayName = "User",
+            emailMfaEnabled = true,
+        )
+        val token = EmailMfaToken(
+            userId = userId,
+            codeHash = "hash-123456",
+            purpose = "DISABLE",
+            expiresAt = Instant.now().plusSeconds(300),
+            used = false,
+        )
+        `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
+        `when`(emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+            eqNonNull(userId), eqNonNull("DISABLE"), anyNonNull(Instant.now())
+        )).thenReturn(token)
+        `when`(tokenService.hash("123456")).thenReturn("hash-123456")
+
+        authService.disableEmailMfa(userId, code = "123456")
+        assertFalse(user.emailMfaEnabled)
+        assertTrue(token.used)
+        verify(emailMfaTokenRepository).save(token)
+        verify(userRepository).save(user)
+    }
+
+    @Test
+    fun `disableEmailMfa fails with invalid code`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            email = "user@example.com",
+            passwordHash = "hashed",
+            displayName = "User",
+            emailMfaEnabled = true,
+        )
+        `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
+        `when`(emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+            eqNonNull(userId), eqNonNull("DISABLE"), anyNonNull(Instant.now())
+        )).thenReturn(null)
+        `when`(emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+            eqNonNull(userId), eqNonNull("LOGIN"), anyNonNull(Instant.now())
+        )).thenReturn(null)
+        `when`(emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+            eqNonNull(userId), eqNonNull("ENABLE"), anyNonNull(Instant.now())
+        )).thenReturn(null)
+
+        val ex = assertThrows(ApiException::class.java) {
+            authService.disableEmailMfa(userId, code = "000000")
+        }
+        assertEquals("That code is not correct", ex.message)
+        assertTrue(user.emailMfaEnabled)
+        verify(userRepository, never()).save(user)
+    }
+
+    @Test
+    fun `sendDisableEmailMfaCode dispatches code when email MFA is enabled`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            email = "user@example.com",
+            passwordHash = "hashed",
+            displayName = "User",
+            emailMfaEnabled = true,
+        )
+        `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
+        `when`(emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+            eqNonNull(userId), eqNonNull("DISABLE"), anyNonNull(Instant.now())
+        )).thenReturn(null)
+        `when`(emailMfaTokenRepository.findAllByUserIdAndPurposeAndUsedFalse(userId, "DISABLE")).thenReturn(emptyList())
+        `when`(tokenService.hash(anyNonNull(""))).thenAnswer { "hash-" + it.getArgument<String>(0) }
+
+        val res = authService.sendDisableEmailMfaCode(userId)
+        assertTrue(res.message.contains("verification code has been sent"))
+
+        val codeCaptor = ArgumentCaptor.forClass(String::class.java)
+        verify(emailService).sendMfaCodeEmail(
+            eqNonNull("user@example.com"),
+            eqNonNull("User"),
+            captureNonNull(codeCaptor, ""),
+            eqNonNull("nl")
+        )
+        assertEquals(6, codeCaptor.value.length)
+    }
+
+    @Test
+    fun `sendDisableEmailMfaCode throws when email MFA is not enabled`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            email = "user@example.com",
+            passwordHash = "hashed",
+            displayName = "User",
+            emailMfaEnabled = false,
+        )
+        `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
+
+        val ex = assertThrows(ApiException::class.java) {
+            authService.sendDisableEmailMfaCode(userId)
+        }
+        assertEquals("Email two-factor authentication is not enabled", ex.message)
     }
 }

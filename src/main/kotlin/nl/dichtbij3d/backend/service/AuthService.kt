@@ -344,17 +344,43 @@ class AuthService(
     }
 
     @Transactional
+    fun sendDisableEmailMfaCode(userId: UUID): MessageResponse {
+        val user = userRepository.findById(userId).orElseThrow { ApiException.notFound("User") }
+        if (!user.emailMfaEnabled) {
+            throw ApiException.badRequest("Email two-factor authentication is not enabled")
+        }
+
+        val recent = emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+            user.id!!, "DISABLE", Instant.now()
+        )
+        if (recent != null && recent.createdAt.isAfter(Instant.now().minusSeconds(30))) {
+            throw ApiException.badRequest("Please wait a moment before requesting another code")
+        }
+
+        issueAndSendEmailMfaCode(user, "DISABLE")
+        return MessageResponse("A verification code has been sent to ${user.email}")
+    }
+
+    @Transactional
     fun disableEmailMfa(userId: UUID, code: String? = null, password: String? = null) {
         val user = userRepository.findById(userId).orElseThrow { ApiException.notFound("User") }
         if (!user.emailMfaEnabled) return
 
-        if (!password.isNullOrBlank()) {
-            if (!passwordEncoder.matches(password, user.passwordHash)) {
+        val cleanPassword = password?.trim()?.ifBlank { null }
+        val cleanCode = code?.trim()?.ifBlank { null }
+
+        if (cleanPassword == null && cleanCode == null) {
+            throw ApiException.badRequest("Verification code or current password is required to disable two-factor authentication")
+        }
+
+        if (cleanPassword != null) {
+            if (!passwordEncoder.matches(cleanPassword, user.passwordHash)) {
                 throw ApiException.badRequest("Your current password is incorrect")
             }
-        } else if (!code.isNullOrBlank()) {
-            val cleanCode = code.trim()
+        } else if (cleanCode != null) {
             val token = emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+                user.id!!, "DISABLE", Instant.now()
+            ) ?: emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
                 user.id!!, "LOGIN", Instant.now()
             ) ?: emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
                 user.id!!, "ENABLE", Instant.now()
@@ -363,6 +389,10 @@ class AuthService(
             val matchesTotp = user.totpEnabled && user.totpSecret != null && totpService.verify(user.totpSecret!!, cleanCode)
             if (!matchesEmail && !matchesTotp) {
                 throw ApiException.badRequest("That code is not correct")
+            }
+            if (matchesEmail && token != null) {
+                token.used = true
+                emailMfaTokenRepository.save(token)
             }
         }
 

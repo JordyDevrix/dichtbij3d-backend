@@ -111,6 +111,10 @@ class AuthController(
         return MessageResponse("Email two-factor authentication enabled")
     }
 
+    @PostMapping("/mfa/email/disable/send")
+    fun sendEmailMfaDisableCode(@AuthenticationPrincipal principal: AppPrincipal): MessageResponse =
+        authService.sendDisableEmailMfaCode(principal.id)
+
     @PostMapping("/mfa/email/disable")
     fun emailMfaDisable(
         @AuthenticationPrincipal principal: AppPrincipal,

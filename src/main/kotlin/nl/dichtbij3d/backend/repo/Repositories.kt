@@ -24,6 +24,17 @@ interface UserRepository : JpaRepository<User, UUID>, JpaSpecificationExecutor<U
     fun countByEnabledFalse(): Long
 
     @Query(
+        value = """
+            select to_char(d.day, 'YYYY-MM-DD') as day, count(u.id) as total
+            from generate_series(date_trunc('day', now()) - interval '29 days', date_trunc('day', now()), interval '1 day') as d(day)
+            left join users u on date_trunc('day', u.created_at) = d.day
+            group by d.day order by d.day
+        """,
+        nativeQuery = true
+    )
+    fun findDailySignups(): List<DayCountProjection>
+
+    @Query(
         """
         select u from User u
         where u.deletedAt is null
@@ -164,6 +175,22 @@ interface AdvertRepository : JpaRepository<Advert, UUID>, JpaSpecificationExecut
         """
     )
     fun countGroupedByType(): List<TypeCount>
+
+    @Query(
+        value = """
+            select to_char(d.day, 'YYYY-MM-DD') as day, count(a.id) as total
+            from generate_series(date_trunc('day', now()) - interval '29 days', date_trunc('day', now()), interval '1 day') as d(day)
+            left join adverts a on date_trunc('day', a.created_at) = d.day and a.deleted_at is null
+            group by d.day order by d.day
+        """,
+        nativeQuery = true
+    )
+    fun findDailyAdverts(): List<DayCountProjection>
+}
+
+interface DayCountProjection {
+    val day: String
+    val total: Long
 }
 
 interface TypeCount {
