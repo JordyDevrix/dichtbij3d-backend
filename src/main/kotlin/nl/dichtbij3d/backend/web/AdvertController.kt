@@ -9,8 +9,13 @@ import nl.dichtbij3d.backend.dto.*
 import nl.dichtbij3d.backend.security.AppPrincipal
 import nl.dichtbij3d.backend.service.AdvertFilter
 import nl.dichtbij3d.backend.service.AdvertService
+import org.springframework.core.io.InputStreamResource
 import org.springframework.format.annotation.DateTimeFormat
+import org.springframework.http.ContentDisposition
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 import java.time.LocalDate
@@ -180,6 +185,22 @@ class AdvertController(private val advertService: AdvertService) {
         @PathVariable bidId: UUID,
         @AuthenticationPrincipal principal: AppPrincipal,
     ): MessageResponse = advertService.decideBid(id, bidId, false, principal)
+
+    @GetMapping("/{id}/files/{fileId}/download")
+    fun downloadFile(
+        @PathVariable id: UUID,
+        @PathVariable fileId: UUID,
+        @AuthenticationPrincipal principal: AppPrincipal?,
+    ): ResponseEntity<InputStreamResource> {
+        val (stream, fileName, contentType) = advertService.downloadFile(id, fileId, principal)
+        return ResponseEntity.ok()
+            .header(
+                HttpHeaders.CONTENT_DISPOSITION,
+                ContentDisposition.attachment().filename(fileName).build().toString()
+            )
+            .contentType(MediaType.parseMediaType(contentType))
+            .body(InputStreamResource(stream))
+    }
 }
 
 /** Resolves the UI locale from `X-Locale` or the standard `Accept-Language` header. */

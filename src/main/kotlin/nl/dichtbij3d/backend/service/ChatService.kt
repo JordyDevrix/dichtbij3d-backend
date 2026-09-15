@@ -1,9 +1,14 @@
 package nl.dichtbij3d.backend.service
 
 import nl.dichtbij3d.backend.domain.Advert
+import nl.dichtbij3d.backend.domain.AdvertType
 import nl.dichtbij3d.backend.domain.Conversation
 import nl.dichtbij3d.backend.domain.Message
 import nl.dichtbij3d.backend.domain.MessageKind
+import nl.dichtbij3d.backend.domain.Model3d
+import nl.dichtbij3d.backend.domain.ModelFile
+import nl.dichtbij3d.backend.domain.ModelLicense
+import nl.dichtbij3d.backend.domain.ModelVisibility
 import nl.dichtbij3d.backend.domain.NotificationType
 import nl.dichtbij3d.backend.domain.User
 import nl.dichtbij3d.backend.dto.ConversationAdvertDto
@@ -14,12 +19,14 @@ import nl.dichtbij3d.backend.dto.PageResponse
 import nl.dichtbij3d.backend.repo.AdvertRepository
 import nl.dichtbij3d.backend.repo.ConversationRepository
 import nl.dichtbij3d.backend.repo.MessageRepository
+import nl.dichtbij3d.backend.repo.Model3dRepository
 import nl.dichtbij3d.backend.repo.UserRepository
 import nl.dichtbij3d.backend.security.AppPrincipal
 import nl.dichtbij3d.backend.web.ApiException
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.io.InputStream
 import java.time.Instant
 import java.util.UUID
 
@@ -38,6 +45,7 @@ class ChatService(
     private val blocks: BlockService,
     private val mapper: DtoMapper,
     private val storage: StorageService,
+    private val modelRepository: Model3dRepository,
 ) {
 
     @Transactional(readOnly = true)
@@ -90,8 +98,85 @@ class ChatService(
         val peer = conversation.other(principal.id)
         if (peer.deletedAt != null || !peer.enabled) throw ApiException.badRequest("This user can no longer be reached")
         if (blocks.isBlocked(principal.id, peer.id!!)) throw ApiException.forbidden("You cannot message this person")
-        val message = post(conversation, me, request.body.trim(), MessageKind.TEXT)
+
+        val bodyText = request.body?.trim().orEmpty().ifEmpty {
+            if (request.kind == MessageKind.FILE) {
+                request.fileName ?: "File"
+            } else {
+                throw ApiException.badRequest("Message body cannot be empty")
+            }
+        }
+
+        if (request.kind == MessageKind.FILE && request.objectKey.isNullOrBlank()) {
+            throw ApiException.badRequest("objectKey is required for file messages")
+        }
+
+        val message = post(
+            conversation = conversation,
+            sender = me,
+            body = bodyText,
+            kind = request.kind,
+            fileName = request.fileName,
+            fileSize = request.fileSize,
+            objectKey = request.objectKey,
+            contentType = request.contentType,
+        )
+
+        // If the conversation is about a PRINT_REQUEST advert and the author uploads a 3D model, attach it
+        if (request.kind == MessageKind.FILE && request.objectKey != null) {
+            val advert = conversation.advert
+            if (advert != null && advert.deletedAt == null && advert.type == AdvertType.PRINT_REQUEST && advert.author.id == me.id) {
+                val ext = request.fileName?.substringAfterLast('.', "")?.lowercase()
+                if (ext in setOf("stl", "3mf", "obj", "step", "stp")) {
+                    val modelTitle = (request.fileName ?: "Print Model").substringBeforeLast('.').take(140)
+                    val newModel = Model3d(
+                        owner = me,
+                        title = modelTitle,
+                        description = "Uploaded via print request chat",
+                        category = advert.category,
+                        priceCents = 0,
+                        license = ModelLicense.CC_BY_NC,
+                        visibility = ModelVisibility.PUBLIC,
+                    )
+                    newModel.files.add(
+                        ModelFile(
+                            model = newModel,
+                            objectKey = request.objectKey,
+                            fileName = request.fileName ?: "model.$ext",
+                            contentType = request.contentType ?: "application/octet-stream",
+                            sizeBytes = request.fileSize ?: 0L,
+                            sortOrder = 0,
+                        )
+                    )
+                    val saved = modelRepository.save(newModel)
+                    advert.models.add(saved)
+                    if (advert.model == null) {
+                        advert.model = saved
+                    }
+                    adverts.save(advert)
+                }
+            }
+        }
+
         return toDto(message, principal.id)
+    }
+
+    @Transactional(readOnly = true)
+    fun downloadAttachment(
+        conversationId: UUID,
+        messageId: UUID,
+        principal: AppPrincipal,
+    ): Triple<InputStream, String, String> {
+        val conversation = require(conversationId, principal)
+        val message = messages.findById(messageId).orElseThrow { ApiException.notFound("Message") }
+        if (message.conversation.id != conversation.id) {
+            throw ApiException.badRequest("Message does not belong to this conversation")
+        }
+        val key = message.objectKey ?: throw ApiException.notFound("Attachment")
+        val stream = storage.read(key) ?: throw ApiException.notFound("Attachment file")
+        val fileName = message.fileName ?: "attachment"
+        val contentType = message.contentType ?: "application/octet-stream"
+        return Triple(stream, fileName, contentType)
     }
 
     @Transactional
@@ -153,6 +238,10 @@ class ChatService(
         body: String,
         kind: MessageKind,
         notify: Boolean = true,
+        fileName: String? = null,
+        fileSize: Long? = null,
+        objectKey: String? = null,
+        contentType: String? = null,
     ): Message {
         val peer = conversation.other(sender.id!!)
         val hadUnread = messages.countUnread(
@@ -162,9 +251,23 @@ class ChatService(
         ) > 0
 
         val message = messages.save(
-            Message(conversation = conversation, sender = sender, kind = kind, body = body.take(4000))
+            Message(
+                conversation = conversation,
+                sender = sender,
+                kind = kind,
+                body = body.take(4000),
+                fileName = fileName,
+                fileSize = fileSize,
+                objectKey = objectKey,
+                contentType = contentType,
+            )
         )
-        conversation.lastMessage = body.take(180)
+        val snippet = if (kind == MessageKind.FILE) {
+            "📎 ${fileName ?: body}".take(180)
+        } else {
+            body.take(180)
+        }
+        conversation.lastMessage = snippet
         conversation.lastMessageAt = message.createdAt
         // Sending is also reading: the thread should not look unread to its own author.
         conversation.markRead(sender.id!!, message.createdAt)
@@ -173,11 +276,16 @@ class ChatService(
         // Only nudge on the first unread message of a thread, so a burst of replies
         // does not turn into a wall of notifications.
         if (notify && !hadUnread) {
+            val notifBody = if (kind == MessageKind.FILE) {
+                "Sent a file: ${fileName ?: "Attachment"}"
+            } else {
+                body.take(120)
+            }
             notifications.push(
                 userId = peer.id!!,
                 type = NotificationType.MESSAGE_RECEIVED,
                 title = "New message from ${sender.displayName}",
-                body = body.take(120),
+                body = notifBody,
                 link = "/messages/${conversation.id}",
             )
         }
@@ -215,6 +323,11 @@ class ChatService(
         kind = message.kind,
         senderId = message.sender.id!!,
         mine = message.sender.id == viewerId,
+        fileName = message.fileName,
+        fileSize = message.fileSize,
+        fileUrl = message.objectKey?.let {
+            storage.publicUrl(it) ?: "/api/conversations/${message.conversation.id}/messages/${message.id}/download"
+        },
         createdAt = message.createdAt,
     )
 }

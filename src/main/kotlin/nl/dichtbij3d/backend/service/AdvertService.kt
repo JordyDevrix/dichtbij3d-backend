@@ -14,6 +14,7 @@ import org.springframework.data.domain.Sort
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.io.InputStream
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.LocalDate
@@ -159,6 +160,21 @@ class AdvertService(
         val reactions = reactionRepository.findAllByAdvertIdAndDeletedAtIsNullOrderByCreatedAtAsc(id)
         val bids = if (advert.allowBidding) bidRepository.findAllByAdvertIdOrderByAmountCentsDesc(id) else emptyList()
 
+        val allModels = (advert.models + listOfNotNull(advert.model)).distinctBy { it.id }.filter { it.deletedAt == null }
+        val price = advert.priceCents
+        val isFree = price == null || price <= 0
+        val modelDetails = allModels.map { m ->
+            val hasAccess = isFree || m.isFree || isOwner || canModerate ||
+                (viewer != null && (advert.acceptedBy?.id == viewer.id || entitlementRepository.existsByModelIdAndUserId(m.id!!, viewer.id)))
+            ModelDetailDto(
+                model = mapper.modelSummary(m, hasAccess = hasAccess),
+                files = m.files.map { mapper.modelFile(it, hasAccess = hasAccess) },
+                purchaseRequests = emptyList(),
+                myPurchaseStatus = null,
+            )
+        }
+        val fallbackThumbnail = allModels.firstNotNullOfOrNull { it.thumbnailKey }
+
         return AdvertDetailDto(
             id = advert.id!!,
             type = advert.type,
@@ -177,23 +193,16 @@ class AdvertService(
             deadline = advert.deadline,
             viewCount = advert.viewCount,
             imageUrls = advert.images.sortedBy { it.sortOrder }.map { storage.publicUrl(it.objectKey) ?: "/api/files/${it.objectKey}" }
-                .ifEmpty { listOfNotNull(advert.model?.thumbnailKey?.let { storage.publicUrl(it) ?: "/api/files/$it" }) },
+                .ifEmpty { listOfNotNull(fallbackThumbnail?.let { storage.publicUrl(it) ?: "/api/files/$it" }) },
             imageKeys = advert.images.sortedBy { it.sortOrder }.map { it.objectKey }
-                .ifEmpty { listOfNotNull(advert.model?.thumbnailKey) },
+                .ifEmpty { listOfNotNull(fallbackThumbnail) },
             tags = advert.tags.map { mapper.tag(it, locale) }.sortedBy { it.label },
             author = mapper.publicUser(advert.author),
             acceptedBy = advert.acceptedBy?.let { mapper.publicUser(it) },
             acceptedAt = advert.acceptedAt,
-            // A deleted model is not shown as if it were still for sale; the advert
-            // survives but says out loud that the files are gone.
-            model = advert.model?.takeIf { it.deletedAt == null }?.let { m ->
-                mapper.modelSummary(
-                    m,
-                    hasAccess = viewer != null &&
-                        (viewer.id == m.owner.id || entitlementRepository.existsByModelIdAndUserId(m.id!!, viewer.id))
-                )
-            },
-            modelRemoved = advert.model?.deletedAt != null,
+            model = modelDetails.firstOrNull()?.model,
+            models = modelDetails,
+            modelRemoved = allModels.isEmpty() && (advert.model != null || advert.models.isNotEmpty()),
             reactions = reactions
                 .filter { it.author.id !in blocks.hiddenFor(viewer) }
                 .map { mapper.reaction(it, viewer) },
@@ -212,6 +221,69 @@ class AdvertService(
         return viewer.isAdmin || viewer.id == advert.author.id || viewer.id == advert.acceptedBy?.id
     }
 
+    private fun resolveModels(
+        modelsInput: List<AdvertModelInput>,
+        modelIds: List<UUID>,
+        singleModelId: UUID?,
+        author: User,
+        advertCategory: Category,
+        advertPriceCents: Int?,
+    ): MutableList<Model3d> {
+        val resolved = mutableListOf<Model3d>()
+        val seenIds = mutableSetOf<UUID>()
+
+        for (input in modelsInput) {
+            if (input.id != null) {
+                val existing = modelRepository.findById(input.id).orElseThrow { ApiException.notFound("Model") }
+                if (existing.owner.id != author.id) throw ApiException.forbidden("You can only attach your own models")
+                if (existing.deletedAt != null) throw ApiException.badRequest("That model no longer exists")
+                if (seenIds.add(existing.id!!)) {
+                    resolved.add(existing)
+                }
+            } else if (input.files.isNotEmpty()) {
+                val title = input.title?.trim()?.ifBlank { null }
+                    ?: input.files.firstOrNull()?.fileName?.substringBeforeLast('.')
+                    ?: "3D Model"
+                val newModel = Model3d(
+                    owner = author,
+                    title = title.take(140),
+                    description = input.description?.trim(),
+                    category = advertCategory,
+                    priceCents = advertPriceCents ?: 0,
+                    license = ModelLicense.CC_BY_NC,
+                    visibility = ModelVisibility.PUBLIC,
+                )
+                input.files.forEachIndexed { index, ref ->
+                    newModel.files.add(
+                        ModelFile(
+                            model = newModel,
+                            objectKey = ref.objectKey,
+                            fileName = ref.fileName,
+                            contentType = ref.contentType,
+                            sizeBytes = ref.sizeBytes,
+                            sortOrder = index,
+                        )
+                    )
+                }
+                val saved = modelRepository.save(newModel)
+                seenIds.add(saved.id!!)
+                resolved.add(saved)
+            }
+        }
+
+        val allIds = (modelIds + listOfNotNull(singleModelId)).distinct()
+        for (id in allIds) {
+            if (seenIds.add(id)) {
+                val m = modelRepository.findById(id).orElseThrow { ApiException.notFound("Model") }
+                if (m.owner.id != author.id) throw ApiException.forbidden("You can only attach your own models")
+                if (m.deletedAt != null) throw ApiException.badRequest("That model no longer exists")
+                resolved.add(m)
+            }
+        }
+
+        return resolved
+    }
+
     // ------------------------------------------------------------- mutations
 
     @Transactional
@@ -220,18 +292,20 @@ class AdvertService(
         if (request.type.isSale && request.priceCents == null && !request.allowBidding) {
             throw ApiException.badRequest("A sale advert needs either a fixed price or bidding enabled")
         }
-        val model = request.modelId?.let { id ->
-            modelRepository.findById(id).orElseThrow { ApiException.notFound("Model") }.also {
-                if (it.owner.id != principal.id) throw ApiException.forbidden("You can only attach your own models")
-                if (it.deletedAt != null) throw ApiException.badRequest("That model no longer exists")
-            }
-        }
+        val models = resolveModels(
+            request.models,
+            request.modelIds,
+            request.modelId,
+            author,
+            request.category,
+            request.priceCents,
+        )
         // A "model for sale" without a model is just a promise. Selling a model means
         // handing over files, so the advert always carries the model it sells.
-        if (request.type == AdvertType.MODEL_FOR_SALE && model == null) {
-            throw ApiException.badRequest("Attach the 3D model you are selling", mapOf("modelId" to "Select or upload a model"))
+        if (request.type == AdvertType.MODEL_FOR_SALE && models.isEmpty()) {
+            throw ApiException.badRequest("Attach the 3D model you are selling", mapOf("models" to "Select or upload a model"))
         }
-        model?.let {
+        models.forEach {
             // Advert and model must not disagree about price or category.
             if (request.type == AdvertType.MODEL_FOR_SALE) {
                 it.priceCents = request.priceCents ?: it.priceCents
@@ -253,11 +327,13 @@ class AdvertService(
             city = request.city?.trim()?.ifBlank { null } ?: author.city,
             postalCode = request.postalCode?.trim()?.ifBlank { null },
             deadline = request.deadline,
-            model = model,
+            model = models.firstOrNull(),
+            models = models,
             tags = resolveTags(request.tags).toMutableSet(),
         )
-        val initialImageKeys = if (request.imageKeys.isEmpty() && model?.thumbnailKey != null) {
-            listOf(model.thumbnailKey!!)
+        val fallbackThumb = models.firstNotNullOfOrNull { it.thumbnailKey }
+        val initialImageKeys = if (request.imageKeys.isEmpty() && fallbackThumb != null) {
+            listOf(fallbackThumb)
         } else {
             request.imageKeys
         }
@@ -276,12 +352,17 @@ class AdvertService(
         request.category?.let { category ->
             advert.category = category
             advert.model?.takeIf { it.deletedAt == null }?.let { it.category = category; modelRepository.save(it) }
+            advert.models.filter { it.deletedAt == null }.forEach { it.category = category; modelRepository.save(it) }
         }
         request.title?.let { advert.title = it.trim() }
         request.description?.let { advert.description = it.trim() }
         request.priceCents?.let {
             advert.priceCents = it
             if (advert.type == AdvertType.MODEL_FOR_SALE) {
+                advert.models.filter { model -> model.deletedAt == null }.forEach { model ->
+                    model.priceCents = it
+                    modelRepository.save(model)
+                }
                 advert.model
                     ?.takeIf { model -> model.deletedAt == null }
                     ?.let { model -> model.priceCents = it; modelRepository.save(model) }
@@ -295,18 +376,24 @@ class AdvertService(
         request.postalCode?.let { advert.postalCode = it.trim().ifBlank { null } }
         request.deadline?.let { advert.deadline = it }
         request.status?.let { advert.status = it }
-        // Swapping in another model is how an advert recovers after its model was removed.
-        request.modelId?.let { modelId ->
-            val replacement = modelRepository.findById(modelId).orElseThrow { ApiException.notFound("Model") }
-            if (replacement.owner.id != advert.author.id) {
-                throw ApiException.forbidden("You can only attach your own models")
-            }
-            if (replacement.deletedAt != null) throw ApiException.badRequest("That model no longer exists")
-            advert.model = replacement
+        if (request.models != null || request.modelIds != null || request.modelId != null) {
+            val replacementModels = resolveModels(
+                request.models.orEmpty(),
+                request.modelIds.orEmpty(),
+                request.modelId,
+                advert.author,
+                advert.category,
+                advert.priceCents,
+            )
+            advert.models.clear()
+            advert.models.addAll(replacementModels)
+            advert.model = replacementModels.firstOrNull()
             if (advert.type == AdvertType.MODEL_FOR_SALE) {
-                replacement.category = advert.category
-                advert.priceCents?.let { replacement.priceCents = it }
-                modelRepository.save(replacement)
+                replacementModels.forEach { replacement ->
+                    replacement.category = advert.category
+                    advert.priceCents?.let { replacement.priceCents = it }
+                    modelRepository.save(replacement)
+                }
             }
         }
         request.tags?.let { advert.tags = resolveTags(it).toMutableSet() }
@@ -471,7 +558,8 @@ class AdvertService(
         if (!advert.type.isSale) throw ApiException.badRequest("This advert is not for sale")
         if (advert.status != AdvertStatus.OPEN) throw ApiException.badRequest("This advert is no longer available")
         if (advert.author.id == principal.id) throw ApiException.badRequest("You cannot buy your own advert")
-        if (advert.type == AdvertType.MODEL_FOR_SALE && advert.model?.deletedAt != null) {
+        val allModels = (advert.models + listOfNotNull(advert.model)).distinctBy { it.id }.filter { it.deletedAt == null }
+        if (advert.type == AdvertType.MODEL_FOR_SALE && allModels.isEmpty()) {
             throw ApiException.badRequest("The seller removed this model, so it can no longer be bought")
         }
         val price = advert.priceCents
@@ -493,15 +581,16 @@ class AdvertService(
 
         // A model advert sells files, so it uses the same purchase request as the model page:
         // the owner hands over access once payment is settled, and the buyer's library fills up.
-        val model = advert.model
-        if (advert.type == AdvertType.MODEL_FOR_SALE && model != null) {
-            val purchase = purchaseRepository.findByModelIdAndBuyerId(model.id!!, principal.id)
-                ?: ModelPurchaseRequest(model = model, buyer = buyer)
-            purchase.status = PurchaseRequestStatus.PENDING
-            purchase.message = request.message?.trim()?.ifBlank { null }
-            purchase.conversationId = conversation.id
-            purchase.decidedAt = null
-            purchaseRepository.save(purchase)
+        if (advert.type == AdvertType.MODEL_FOR_SALE && allModels.isNotEmpty()) {
+            for (model in allModels) {
+                val purchase = purchaseRepository.findByModelIdAndBuyerId(model.id!!, principal.id)
+                    ?: ModelPurchaseRequest(model = model, buyer = buyer)
+                purchase.status = PurchaseRequestStatus.PENDING
+                purchase.message = request.message?.trim()?.ifBlank { null }
+                purchase.conversationId = conversation.id
+                purchase.decidedAt = null
+                purchaseRepository.save(purchase)
+            }
         }
 
         notifications.push(
@@ -513,13 +602,34 @@ class AdvertService(
             } else {
                 "Agree on the details in your messages, then mark the advert as sold."
             },
-            link = if (advert.type == AdvertType.MODEL_FOR_SALE && model != null) {
-                "/model/${model.id}"
-            } else {
-                "/advert/${advert.id}"
-            },
+            link = "/advert/${advert.id}",
         )
         return PurchaseResponse(conversation.id!!, "The seller has been notified")
+    }
+
+    @Transactional
+    fun downloadFile(advertId: UUID, fileId: UUID, principal: AppPrincipal?): Triple<InputStream, String, String> {
+        val advert = advertRepository.findById(advertId).orElseThrow { ApiException.notFound("Advert") }
+        if (advert.deletedAt != null && principal?.isAdmin != true) throw ApiException.notFound("Advert")
+
+        val allModels = (advert.models + listOfNotNull(advert.model)).distinctBy { it.id }.filter { it.deletedAt == null }
+        val allFiles = allModels.flatMap { it.files }
+        val file = allFiles.find { it.id == fileId } ?: throw ApiException.notFound("File")
+        val model = file.model
+
+        val isOwner = principal != null && principal.id == advert.author.id
+        val canModerate = principal?.isAdmin == true
+        val price = advert.priceCents
+        val isFree = price == null || price <= 0 || model.isFree
+        val hasAccess = isFree || isOwner || canModerate ||
+            (principal != null && (advert.acceptedBy?.id == principal.id || entitlementRepository.existsByModelIdAndUserId(model.id!!, principal.id)))
+
+        if (!hasAccess) throw ApiException.forbidden("You must purchase this advert to download the models")
+
+        val stream = storage.read(file.objectKey) ?: throw ApiException.notFound("File contents")
+        model.downloadCount += 1
+        modelRepository.save(model)
+        return Triple(stream, file.fileName, file.contentType)
     }
 
     // ------------------------------------------------------------- bids

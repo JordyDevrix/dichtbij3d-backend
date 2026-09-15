@@ -431,6 +431,15 @@ class Advert(
     @JoinColumn(name = "model_id")
     var model: Model3d? = null,
 
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "advert_models",
+        joinColumns = [JoinColumn(name = "advert_id")],
+        inverseJoinColumns = [JoinColumn(name = "model_id")]
+    )
+    @OrderBy("createdAt ASC")
+    var models: MutableList<Model3d> = mutableListOf(),
+
     var city: String? = null,
 
     @Column(name = "postal_code", length = 12)
@@ -759,6 +768,18 @@ class Message(
 
     @Column(nullable = false, columnDefinition = "text")
     var body: String,
+
+    @Column(name = "file_name")
+    var fileName: String? = null,
+
+    @Column(name = "file_size")
+    var fileSize: Long? = null,
+
+    @Column(name = "object_key", columnDefinition = "text")
+    var objectKey: String? = null,
+
+    @Column(name = "content_type", length = 120)
+    var contentType: String? = null,
 
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),

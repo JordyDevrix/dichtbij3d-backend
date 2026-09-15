@@ -128,8 +128,8 @@ enum class NotificationType {
     SYSTEM
 }
 
-/** A normal chat message, or an automatic line the platform posts itself. */
-enum class MessageKind { TEXT, SYSTEM }
+/** A normal chat message, an automatic line the platform posts itself, or a file attachment. */
+enum class MessageKind { TEXT, SYSTEM, FILE }
 
 enum class WebAuthnPurpose { REGISTRATION, AUTHENTICATION }
 

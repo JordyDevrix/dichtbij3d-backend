@@ -264,7 +264,7 @@ class ModelService(
     }
 
     @Transactional
-    fun download(modelId: UUID, fileId: UUID, principal: AppPrincipal): Triple<InputStream, String, String> {
+    fun download(modelId: UUID, fileId: UUID, principal: AppPrincipal?): Triple<InputStream, String, String> {
         val model = modelRepository.findById(modelId).orElseThrow { ApiException.notFound("Model") }
         if (!hasAccess(model, principal)) throw ApiException.forbidden("Purchase this model to download it")
         val file = fileRepository.findById(fileId).orElseThrow { ApiException.notFound("File") }
@@ -282,9 +282,13 @@ class ModelService(
             .filter { it.deletedAt == null }
             .map { mapper.modelSummary(it, true) }
 
-    private fun hasAccess(model: Model3d, viewer: AppPrincipal?): Boolean {
+    fun hasAccess(model: Model3d, viewer: AppPrincipal?): Boolean {
+        if (model.isFree) return true
+        val advertsWithModel = advertRepository.findAllContainingModelId(model.id!!)
+        if (advertsWithModel.any { val p = it.priceCents; p == null || p <= 0 }) return true
         if (viewer == null) return false
         if (viewer.isAdmin || viewer.id == model.owner.id) return true
+        if (advertsWithModel.any { it.author.id == viewer.id || it.acceptedBy?.id == viewer.id }) return true
         return entitlementRepository.existsByModelIdAndUserId(model.id!!, viewer.id)
     }
 }

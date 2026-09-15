@@ -9,6 +9,11 @@ import nl.dichtbij3d.backend.dto.MessageResponse
 import nl.dichtbij3d.backend.dto.PageResponse
 import nl.dichtbij3d.backend.security.AppPrincipal
 import nl.dichtbij3d.backend.service.ChatService
+import org.springframework.core.io.InputStreamResource
+import org.springframework.http.ContentDisposition
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
@@ -52,6 +57,22 @@ class ChatController(private val service: ChatService) {
         @PathVariable id: UUID,
         @Valid @RequestBody request: MessageCreateRequest,
     ): MessageDto = service.send(id, principal, request)
+
+    @GetMapping("/{id}/messages/{messageId}/download")
+    fun download(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @PathVariable id: UUID,
+        @PathVariable messageId: UUID,
+    ): ResponseEntity<InputStreamResource> {
+        val (stream, fileName, contentType) = service.downloadAttachment(id, messageId, principal)
+        return ResponseEntity.ok()
+            .header(
+                HttpHeaders.CONTENT_DISPOSITION,
+                ContentDisposition.attachment().filename(fileName).build().toString()
+            )
+            .contentType(MediaType.parseMediaType(contentType))
+            .body(InputStreamResource(stream))
+    }
 
     @PostMapping("/{id}/read")
     fun read(@AuthenticationPrincipal principal: AppPrincipal, @PathVariable id: UUID): MessageResponse {

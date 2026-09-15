@@ -233,7 +233,7 @@ class ModelController(private val service: ModelService) {
     fun download(
         @PathVariable id: UUID,
         @PathVariable fileId: UUID,
-        @AuthenticationPrincipal principal: AppPrincipal,
+        @AuthenticationPrincipal principal: AppPrincipal?,
     ): ResponseEntity<InputStreamResource> {
         val (stream, fileName, contentType) = service.download(id, fileId, principal)
         return ResponseEntity.ok()

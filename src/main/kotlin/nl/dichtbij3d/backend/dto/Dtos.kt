@@ -152,6 +152,13 @@ data class TagDto(
 
 // ---------------------------------------------------------------- adverts
 
+data class AdvertModelInput(
+    val id: UUID? = null,
+    val title: String? = null,
+    val description: String? = null,
+    val files: List<ModelFileRef> = emptyList(),
+)
+
 data class AdvertCreateRequest(
     val type: AdvertType,
     val category: Category = Category.OTHER,
@@ -166,6 +173,8 @@ data class AdvertCreateRequest(
     val postalCode: String? = null,
     val deadline: LocalDate? = null,
     val modelId: UUID? = null,
+    val modelIds: List<UUID> = emptyList(),
+    val models: List<AdvertModelInput> = emptyList(),
     val tags: List<String> = emptyList(),
     val imageKeys: List<String> = emptyList(),
 )
@@ -184,6 +193,8 @@ data class AdvertUpdateRequest(
     val deadline: LocalDate? = null,
     val status: AdvertStatus? = null,
     val modelId: UUID? = null,
+    val modelIds: List<UUID>? = null,
+    val models: List<AdvertModelInput>? = null,
     val tags: List<String>? = null,
     val imageKeys: List<String>? = null,
 )
@@ -237,6 +248,7 @@ data class AdvertDetailDto(
     val acceptedBy: PublicUserDto?,
     val acceptedAt: Instant?,
     val model: ModelSummaryDto?,
+    val models: List<ModelDetailDto> = emptyList(),
     /** The attached model was removed by its owner, so there are no files to sell anymore. */
     val modelRemoved: Boolean = false,
     val reactions: List<ReactionDto>,
@@ -393,7 +405,12 @@ data class ConversationStartRequest(
 )
 
 data class MessageCreateRequest(
-    @field:NotBlank @field:Size(min = 1, max = 4000) val body: String,
+    @field:Size(max = 4000) val body: String? = null,
+    val kind: MessageKind = MessageKind.TEXT,
+    val fileName: String? = null,
+    val fileSize: Long? = null,
+    val objectKey: String? = null,
+    val contentType: String? = null,
 )
 
 data class ConversationDto(
@@ -420,6 +437,9 @@ data class MessageDto(
     val kind: MessageKind,
     val senderId: UUID,
     val mine: Boolean,
+    val fileName: String? = null,
+    val fileSize: Long? = null,
+    val fileUrl: String? = null,
     val createdAt: Instant,
 )
 

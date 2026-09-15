@@ -130,6 +130,14 @@ interface AdvertRepository : JpaRepository<Advert, UUID>, JpaSpecificationExecut
 
     @Query(
         """
+        select distinct a from Advert a left join a.models m
+        where (m.id = :modelId or a.model.id = :modelId) and a.deletedAt is null
+        """
+    )
+    fun findAllContainingModelId(@Param("modelId") modelId: UUID): List<Advert>
+
+    @Query(
+        """
         select a.type as type, count(a) as total from Advert a
         where a.deletedAt is null group by a.type
         """
