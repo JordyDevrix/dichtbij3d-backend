@@ -21,6 +21,7 @@ interface UserRepository : JpaRepository<User, UUID>, JpaSpecificationExecutor<U
     fun existsByEmail(@Param("email") email: String): Boolean
 
     fun countByCreatedAtAfter(instant: Instant): Long
+    fun countByEnabledFalse(): Long
 
     @Query(
         """

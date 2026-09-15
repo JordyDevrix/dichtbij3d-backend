@@ -6,13 +6,12 @@ import nl.dichtbij3d.backend.dto.*
 import nl.dichtbij3d.backend.repo.*
 import nl.dichtbij3d.backend.security.AppPrincipal
 import nl.dichtbij3d.backend.web.ApiException
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
@@ -27,12 +26,13 @@ class AdminService(
     private val notifications: NotificationService,
     private val entityManager: EntityManager,
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
 
     @Transactional(readOnly = true)
     fun metrics(): AdminMetricsDto {
         val weekAgo = Instant.now().minus(7, ChronoUnit.DAYS)
         val allUsers = userRepository.count()
-        val disabled = userRepository.findAll().count { !it.enabled }.toLong()
+        val disabled = userRepository.countByEnabledFalse()
         return AdminMetricsDto(
             totalUsers = allUsers,
             newUsers7d = userRepository.countByCreatedAtAfter(weekAgo),
@@ -51,17 +51,35 @@ class AdminService(
         )
     }
 
-    @Suppress("UNCHECKED_CAST")
     private fun dailySeries(table: String, extraWhere: String?): List<DayCount> {
-        val where = extraWhere?.let { " and $it" } ?: ""
-        val sql = """
-            select to_char(d.day, 'YYYY-MM-DD') as day, count(t.id) as total
-            from generate_series(current_date - interval '29 day', current_date, interval '1 day') as d(day)
-            left join $table t on date_trunc('day', t.created_at) = d.day $where
-            group by d.day order by d.day
-        """.trimIndent()
-        val rows = entityManager.createNativeQuery(sql).resultList as List<Array<Any>>
-        return rows.map { DayCount(it[0].toString(), (it[1] as Number).toLong()) }
+        return try {
+            val where = extraWhere?.let { " and t.$it" } ?: ""
+            val sql = """
+                select to_char(d.day, 'YYYY-MM-DD') as day, count(t.id) as total
+                from generate_series(date_trunc('day', now()) - interval '29 days', date_trunc('day', now()), interval '1 day') as d(day)
+                left join $table t on date_trunc('day', t.created_at) = d.day$where
+                group by d.day order by d.day
+            """.trimIndent()
+            val rows = entityManager.createNativeQuery(sql).resultList
+            rows.mapNotNull { row ->
+                when (row) {
+                    is Array<*> -> {
+                        val day = row[0]?.toString() ?: return@mapNotNull null
+                        val count = (row[1] as? Number)?.toLong() ?: 0L
+                        DayCount(day, count)
+                    }
+                    is List<*> -> {
+                        val day = row[0]?.toString() ?: return@mapNotNull null
+                        val count = (row[1] as? Number)?.toLong() ?: 0L
+                        DayCount(day, count)
+                    }
+                    else -> null
+                }
+            }
+        } catch (ex: Exception) {
+            log.error("Failed to calculate daily series for {}: {}", table, ex.message)
+            emptyList()
+        }
     }
 
     @Transactional(readOnly = true)
