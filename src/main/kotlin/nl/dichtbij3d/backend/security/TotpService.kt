@@ -37,15 +37,40 @@ class TotpService {
         return "otpauth://totp/$label?$params"
     }
 
-    fun verify(secret: String, code: String, now: Long = System.currentTimeMillis() / 1000): Boolean {
+    /**
+     * Verifies the TOTP code against the secret within a +/- 1 step drift window.
+     * To prevent replay attacks (RFC 6238 Section 5.2), [lastUsedStep] can be provided.
+     * If valid and not replayed, returns the matched time step (to be stored by caller).
+     * Returns null if the code is invalid or has already been used in this or a prior step.
+     */
+    fun verify(
+        secret: String,
+        code: String,
+        lastUsedStep: Long? = null,
+        now: Long = System.currentTimeMillis() / 1000,
+    ): Long? {
         val normalized = code.trim().replace(" ", "")
-        if (normalized.length != DIGITS || normalized.any { !it.isDigit() }) return false
+        if (normalized.length != DIGITS || normalized.any { !it.isDigit() }) return null
         val key = base32Decode(secret)
         val counter = now / PERIOD
         for (drift in -1..1) {
-            if (constantTimeEquals(generate(key, counter + drift), normalized)) return true
+            val step = counter + drift
+            if (lastUsedStep != null && step <= lastUsedStep) {
+                continue
+            }
+            if (constantTimeEquals(generate(key, step), normalized)) {
+                return step
+            }
         }
-        return false
+        return null
+    }
+
+    /**
+     * Generates the code for a specific counter step (useful for testing and internal verification).
+     */
+    fun generateCode(secret: String, counter: Long): String {
+        val key = base32Decode(secret)
+        return generate(key, counter)
     }
 
     private fun generate(key: ByteArray, counter: Long): String {

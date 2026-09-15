@@ -96,7 +96,9 @@ class AuthService(
             if (!code.isNullOrBlank()) {
                 var verified = false
                 if (user.totpEnabled && user.totpSecret != null) {
-                    if (totpService.verify(user.totpSecret!!, code)) {
+                    val step = totpService.verify(user.totpSecret!!, code, user.lastTotpStep)
+                    if (step != null) {
+                        user.lastTotpStep = step
                         verified = true
                     }
                 }
@@ -104,9 +106,7 @@ class AuthService(
                     val token = emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
                         user.id!!, "LOGIN", Instant.now()
                     )
-                    if (token != null && token.codeHash == tokenService.hash(code)) {
-                        token.used = true
-                        emailMfaTokenRepository.save(token)
+                    if (verifyEmailMfaToken(token, code)) {
                         verified = true
                     }
                 }
@@ -144,7 +144,9 @@ class AuthService(
         var verified = false
 
         if (user.totpEnabled && user.totpSecret != null) {
-            if (totpService.verify(user.totpSecret!!, code)) {
+            val step = totpService.verify(user.totpSecret!!, code, user.lastTotpStep)
+            if (step != null) {
+                user.lastTotpStep = step
                 verified = true
             }
         }
@@ -153,9 +155,7 @@ class AuthService(
             val token = emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
                 user.id!!, "LOGIN", Instant.now()
             )
-            if (token != null && token.codeHash == tokenService.hash(code)) {
-                token.used = true
-                emailMfaTokenRepository.save(token)
+            if (verifyEmailMfaToken(token, code)) {
                 verified = true
             }
         }
@@ -269,8 +269,9 @@ class AuthService(
     fun enableTotp(userId: UUID, code: String) {
         val user = userRepository.findById(userId).orElseThrow { ApiException.notFound("User") }
         val secret = user.totpSecret ?: throw ApiException.badRequest("Start the setup first")
-        if (!totpService.verify(secret, code)) throw ApiException.badRequest("That code is not correct")
+        val step = totpService.verify(secret, code, user.lastTotpStep) ?: throw ApiException.badRequest("That code is not correct")
         user.totpEnabled = true
+        user.lastTotpStep = step
         userRepository.save(user)
     }
 
@@ -278,9 +279,10 @@ class AuthService(
     fun disableTotp(userId: UUID, code: String) {
         val user = userRepository.findById(userId).orElseThrow { ApiException.notFound("User") }
         val secret = user.totpSecret ?: return
-        if (!totpService.verify(secret, code)) throw ApiException.badRequest("That code is not correct")
+        totpService.verify(secret, code, user.lastTotpStep) ?: throw ApiException.badRequest("That code is not correct")
         user.totpEnabled = false
         user.totpSecret = null
+        user.lastTotpStep = null
         userRepository.save(user)
     }
 
@@ -331,12 +333,13 @@ class AuthService(
             user.id!!, "ENABLE", Instant.now()
         ) ?: throw ApiException.badRequest("No pending verification code found. Please request a new one.")
 
-        if (token.codeHash != tokenService.hash(cleanCode)) {
-            throw ApiException.badRequest("That code is not correct")
+        if (!verifyEmailMfaToken(token, cleanCode)) {
+            if (token.used) {
+                throw ApiException.badRequest("Too many failed attempts. This code has been invalidated. Please request a new code.")
+            }
+            val remaining = MAX_MFA_ATTEMPTS - token.attempts
+            throw ApiException.badRequest("That code is not correct. $remaining attempt${if (remaining == 1) "" else "s"} remaining.")
         }
-
-        token.used = true
-        emailMfaTokenRepository.save(token)
 
         user.emailMfaEnabled = true
         userRepository.save(user)
@@ -385,20 +388,41 @@ class AuthService(
             ) ?: emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
                 user.id!!, "ENABLE", Instant.now()
             )
-            val matchesEmail = token != null && token.codeHash == tokenService.hash(cleanCode)
-            val matchesTotp = user.totpEnabled && user.totpSecret != null && totpService.verify(user.totpSecret!!, cleanCode)
+            val matchesEmail = verifyEmailMfaToken(token, cleanCode)
+            val totpStep = if (user.totpEnabled && user.totpSecret != null) {
+                totpService.verify(user.totpSecret!!, cleanCode, user.lastTotpStep)
+            } else null
+            val matchesTotp = totpStep != null
             if (!matchesEmail && !matchesTotp) {
+                if (token != null && token.used && token.attempts >= MAX_MFA_ATTEMPTS) {
+                    throw ApiException.badRequest("Too many failed attempts. This code has been invalidated. Please request a new code.")
+                }
                 throw ApiException.badRequest("That code is not correct")
             }
-            if (matchesEmail && token != null) {
-                token.used = true
-                emailMfaTokenRepository.save(token)
+            if (matchesTotp) {
+                user.lastTotpStep = totpStep
             }
         }
 
         user.emailMfaEnabled = false
         userRepository.save(user)
         log.info("Email MFA disabled for user: {}", user.email)
+    }
+
+    private fun verifyEmailMfaToken(token: EmailMfaToken?, code: String): Boolean {
+        if (token == null) return false
+        if (token.attempts >= MAX_MFA_ATTEMPTS || token.used) {
+            token.used = true
+            emailMfaTokenRepository.save(token)
+            return false
+        }
+        token.attempts++
+        val matches = token.codeHash == tokenService.hash(code)
+        if (matches || token.attempts >= MAX_MFA_ATTEMPTS) {
+            token.used = true
+        }
+        emailMfaTokenRepository.save(token)
+        return matches
     }
 
     private fun issueAndSendEmailMfaCode(user: User, purpose: String): String {
@@ -519,6 +543,8 @@ class AuthService(
     }
 
     companion object {
+        const val MAX_MFA_ATTEMPTS = 5
+
         /** Pre-computed Argon2id hash used to equalise login timing for unknown accounts. */
         private const val DUMMY_HASH =
             "\$argon2id\$v=19\$m=19456,t=2,p=1\$c29tZXNhbHRzb21lc2FsdA\$Nx0pKrEqvJZmVL0h9V0bW/aXK0i9JhqCz5lK1x3f4kE"

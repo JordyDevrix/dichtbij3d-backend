@@ -257,7 +257,7 @@ class EmailMfaTest {
     }
 
     @Test
-    fun `verifyMfa fails with incorrect email code`() {
+    fun `verifyMfa fails with incorrect email code and increments attempts`() {
         val userId = UUID.randomUUID()
         val user = User(
             id = userId,
@@ -272,6 +272,7 @@ class EmailMfaTest {
             purpose = "LOGIN",
             expiresAt = Instant.now().plusSeconds(300),
             used = false,
+            attempts = 0,
         )
 
         `when`(tokenService.parse("valid-mfa-token")).thenReturn(
@@ -293,7 +294,85 @@ class EmailMfaTest {
             authService.verifyMfa(MfaVerifyRequest(mfaToken = "valid-mfa-token", code = "999999"), null)
         }
         assertEquals("Invalid verification code", ex.message)
+        assertEquals(1, token.attempts)
         assertFalse(token.used)
+        verify(emailMfaTokenRepository).save(token)
+    }
+
+    @Test
+    fun `verifyMfa invalidates token when max attempts reached`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            email = "user@example.com",
+            passwordHash = "hashed",
+            displayName = "User",
+            emailMfaEnabled = true,
+        )
+        val token = EmailMfaToken(
+            userId = userId,
+            codeHash = "hash-654321",
+            purpose = "LOGIN",
+            expiresAt = Instant.now().plusSeconds(300),
+            used = false,
+            attempts = 4, // 5th attempt
+        )
+
+        `when`(tokenService.parse("valid-mfa-token")).thenReturn(
+            ParsedToken(
+                userId = userId,
+                email = "user@example.com",
+                displayName = "User",
+                roles = setOf(Role.CUSTOMER),
+                type = TokenType.MFA,
+            )
+        )
+        `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
+        `when`(tokenService.hash("999999")).thenReturn("hash-999999")
+        `when`(emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+            eqNonNull(userId), eqNonNull("LOGIN"), anyNonNull(Instant.now())
+        )).thenReturn(token)
+
+        val ex = assertThrows(ApiException::class.java) {
+            authService.verifyMfa(MfaVerifyRequest(mfaToken = "valid-mfa-token", code = "999999"), null)
+        }
+        assertEquals("Invalid verification code", ex.message)
+        assertEquals(5, token.attempts)
+        assertTrue(token.used)
+        verify(emailMfaTokenRepository).save(token)
+    }
+
+    @Test
+    fun `enableEmailMfa counts attempts and invalidates after max attempts`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            email = "user@example.com",
+            passwordHash = "hashed",
+            displayName = "User",
+            emailMfaEnabled = false,
+        )
+        val token = EmailMfaToken(
+            userId = userId,
+            codeHash = "hash-123456",
+            purpose = "ENABLE",
+            expiresAt = Instant.now().plusSeconds(300),
+            used = false,
+            attempts = 4, // 5th attempt
+        )
+        `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
+        `when`(emailMfaTokenRepository.findFirstByUserIdAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+            eqNonNull(userId), eqNonNull("ENABLE"), anyNonNull(Instant.now())
+        )).thenReturn(token)
+        `when`(tokenService.hash("000000")).thenReturn("hash-000000")
+
+        val ex = assertThrows(ApiException::class.java) {
+            authService.enableEmailMfa(userId, "000000")
+        }
+        assertTrue(ex.message.contains("Too many failed attempts"))
+        assertEquals(5, token.attempts)
+        assertTrue(token.used)
+        assertFalse(user.emailMfaEnabled)
     }
 
     @Test
@@ -313,7 +392,7 @@ class EmailMfaTest {
             ParsedToken(userId = userId, email = "user@example.com", displayName = "User", roles = setOf(Role.CUSTOMER), type = TokenType.MFA)
         )
         `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
-        `when`(totpService.verify("MYSECRET", "123456")).thenReturn(true)
+        `when`(totpService.verify(eqNonNull("MYSECRET"), eqNonNull("123456"), isNull(), anyLong())).thenReturn(100L)
         `when`(tokenService.hash(anyNonNull(""))).thenAnswer { "hash-" + it.getArgument<String>(0) }
         `when`(tokenService.refreshTokenTtl).thenReturn(Duration.ofDays(7))
         `when`(tokenService.generateRefreshToken()).thenReturn("refresh-token-xyz")
@@ -324,6 +403,35 @@ class EmailMfaTest {
         // Verifying with TOTP code succeeds even though email MFA is also enabled
         val response = authService.verifyMfa(MfaVerifyRequest(mfaToken = "valid-mfa-token", code = "123456"), null)
         assertEquals("access-token-abc", response.accessToken)
+        assertEquals(100L, user.lastTotpStep)
+        verify(userRepository).save(user)
+    }
+
+    @Test
+    fun `verifyMfa rejects replayed TOTP code`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            email = "user@example.com",
+            passwordHash = "hashed",
+            displayName = "User",
+            totpEnabled = true,
+            totpSecret = "MYSECRET",
+            lastTotpStep = 100L,
+            emailMfaEnabled = false,
+        )
+
+        `when`(tokenService.parse("valid-mfa-token")).thenReturn(
+            ParsedToken(userId = userId, email = "user@example.com", displayName = "User", roles = setOf(Role.CUSTOMER), type = TokenType.MFA)
+        )
+        `when`(userRepository.findById(userId)).thenReturn(Optional.of(user))
+        // totpService rejects the replayed code by returning null when step <= lastTotpStep
+        `when`(totpService.verify(eqNonNull("MYSECRET"), eqNonNull("123456"), eqNonNull(100L), anyLong())).thenReturn(null)
+
+        val ex = assertThrows(ApiException::class.java) {
+            authService.verifyMfa(MfaVerifyRequest(mfaToken = "valid-mfa-token", code = "123456"), null)
+        }
+        assertEquals("Invalid verification code", ex.message)
     }
 
     @Test

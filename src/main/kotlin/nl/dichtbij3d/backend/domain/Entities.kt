@@ -63,6 +63,9 @@ class User(
     @Column(name = "totp_enabled", nullable = false)
     var totpEnabled: Boolean = false,
 
+    @Column(name = "last_totp_step")
+    var lastTotpStep: Long? = null,
+
     @Column(name = "email_mfa_enabled", nullable = false)
     var emailMfaEnabled: Boolean = false,
 
@@ -174,6 +177,9 @@ class EmailMfaToken(
 
     @Column(nullable = false)
     var used: Boolean = false,
+
+    @Column(nullable = false)
+    var attempts: Int = 0,
 
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
