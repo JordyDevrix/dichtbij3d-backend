@@ -1,0 +1,77 @@
+PROPRIETARY SOFTWARE LICENSE AGREEMENT
+========================================
+
+Copyright (c) 2026 Dichtbij3D / Jordy Devrix.
+All Rights Reserved.
+
+IMPORTANT: READ THIS LICENSE AGREEMENT CAREFULLY BEFORE ACCESSING, VIEWING,
+COPYING, OR USING ANY PART OF THIS SOFTWARE OR ITS ASSOCIATED DOCUMENTATION.
+
+1. PROPRIETARY RIGHTS & OWNERSHIP
+---------------------------------
+This software, including but not limited to source code, compiled code, user
+interfaces, visual designs, assets, media, documentation, database schemas,
+APIs, and underlying algorithms (collectively, the "Software"), is the confidential
+and proprietary property of the Copyright Holder (Dichtbij3D / Jordy Devrix).
+All title, ownership rights, and intellectual property rights in and to the
+Software remain exclusively with the Copyright Holder.
+
+2. STRICT PROHIBITION ON REDISTRIBUTION & COPYING
+-------------------------------------------------
+No part of the Software may be copied, reproduced, distributed, republished,
+downloaded, displayed, posted, transmitted, or broadcast in any form or by any
+means (electronic, mechanical, photocopying, recording, or otherwise) without the
+prior express written authorization of the Copyright Holder.
+
+3. PROHIBITION ON REBRANDING & WHITE-LABELING
+---------------------------------------------
+You may NOT:
+(a) Rebrand, rename, or white-label the Software or any portion thereof;
+(b) Remove, alter, obscure, or conceal any copyright, trademark, logo, watermark,
+    or other proprietary notices from any part of the Software;
+(c) Represent, advertise, or market the Software (or any derivative or modified
+    version thereof) as your own creation or the creation of any third party.
+
+4. PROHIBITION ON COMMERCIAL USE & HOSTING
+------------------------------------------
+You may NOT:
+(a) Use the Software or any portion thereof for any commercial purpose, whether
+    direct or indirect, including but not limited to selling, reselling, leasing,
+    renting, licensing, or sublicensing;
+(b) Host, deploy, or operate the Software as a Software-as-a-Service (SaaS),
+    Platform-as-a-Service (PaaS), hosted application, managed service, or cloud
+    offering, whether for-profit, non-profit, or internal organizational use,
+    without explicit prior written consent;
+(c) Charge fees, accept donations, or generate advertising revenue in connection
+    with the execution, deployment, or display of the Software.
+
+5. PROHIBITION ON MODIFICATION & DERIVATIVE WORKS
+-------------------------------------------------
+You may NOT modify, alter, adapt, translate, merge, create derivative works of,
+decompile, disassemble, reverse engineer, decrypt, extract, or attempt to derive
+the source code or architectural structure of the Software, in whole or in part,
+except to the extent that such restriction is expressly prohibited by applicable law.
+
+6. PROHIBITION ON ARTIFICIAL INTELLIGENCE & MACHINE LEARNING TRAINING
+---------------------------------------------------------------------
+No portion of the Software (including source code, documentation, images, and data)
+may be ingested, scraped, mined, parsed, or used for the purpose of training,
+fine-tuning, benchmarking, or evaluating artificial intelligence models, machine
+learning models, large language models (LLMs), or neural networks without the
+express prior written consent of the Copyright Holder.
+
+7. NO IMPLIED RIGHTS OR LICENSES
+--------------------------------
+The provision of or access to the Software does not convey any license, express or
+implied, statutory or otherwise, under any formats, copyrights, trademarks, trade
+secrets, or other intellectual property rights, except as explicitly stated herein.
+
+8. DISCLAIMER OF WARRANTY & LIMITATION OF LIABILITY
+---------------------------------------------------
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, TITLE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES, LOSS OF PROFITS,
+DATA LOSS, BUSINESS INTERRUPTION, OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
