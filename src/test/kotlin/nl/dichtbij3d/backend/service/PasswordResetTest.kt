@@ -86,6 +86,7 @@ class PasswordResetTest {
             tokenService = tokenService,
             totpService = totpService,
             emailService = emailService,
+            googleAuthService = GoogleAuthService(""),
             mailProperties = mailProperties,
             mapper = mapper,
             transactionManager = transactionManager,

@@ -38,6 +38,15 @@ data class MfaSendEmailRequest(
     @field:NotBlank val mfaToken: String,
 )
 
+data class GoogleLoginRequest(
+    @field:NotBlank val idToken: String,
+)
+
+data class AuthConfigResponse(
+    val googleClientId: String?,
+    val googleEnabled: Boolean,
+)
+
 data class RefreshRequest(val refreshToken: String)
 
 data class AuthResponse(

@@ -98,6 +98,7 @@ class EmailMfaTest {
             tokenService = tokenService,
             totpService = totpService,
             emailService = emailService,
+            googleAuthService = GoogleAuthService(""),
             mailProperties = mailProperties,
             mapper = mapper,
             transactionManager = transactionManager,

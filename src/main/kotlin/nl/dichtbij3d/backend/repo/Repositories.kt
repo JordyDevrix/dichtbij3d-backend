@@ -17,6 +17,9 @@ interface UserRepository : JpaRepository<User, UUID>, JpaSpecificationExecutor<U
     @Query("select u from User u where lower(u.email) = lower(:email) and u.deletedAt is null")
     fun findByEmail(@Param("email") email: String): User?
 
+    @Query("select u from User u where u.googleId = :googleId and u.deletedAt is null")
+    fun findByGoogleId(@Param("googleId") googleId: String): User?
+
     @Query("select count(u) > 0 from User u where lower(u.email) = lower(:email)")
     fun existsByEmail(@Param("email") email: String): Boolean
 

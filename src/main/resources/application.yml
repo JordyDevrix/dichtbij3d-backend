@@ -89,6 +89,8 @@ dichtbij3d:
     rp-name: Dichtbij3D
     # Must match the exact origin(s) the browser uses, scheme and port included.
     origins: ${WEBAUTHN_ORIGINS:http://localhost:8081,http://localhost:19006,http://localhost:3000}
+  google:
+    client-id: ${GOOGLE_OAUTH_CLIENT_ID:${GOOGLE_CLIENT_ID:}}
   storage:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:dichtbij3d}

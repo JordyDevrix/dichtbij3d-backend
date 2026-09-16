@@ -39,12 +39,60 @@ class AuthService(
     private val tokenService: TokenService,
     private val totpService: TotpService,
     private val emailService: EmailService,
+    private val googleAuthService: GoogleAuthService,
     private val mailProperties: MailProperties,
     private val mapper: DtoMapper,
     transactionManager: PlatformTransactionManager,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val secureRandom = SecureRandom()
+
+    fun getAuthConfig(): AuthConfigResponse = AuthConfigResponse(
+        googleClientId = googleAuthService.clientId,
+        googleEnabled = googleAuthService.isEnabled,
+    )
+
+    @Transactional
+    fun loginWithGoogle(idToken: String, httpRequest: HttpServletRequest?): AuthResponse {
+        val info = googleAuthService.verifyToken(idToken)
+        val email = info.email.trim().lowercase()
+
+        var user = userRepository.findByGoogleId(info.googleId)
+            ?: userRepository.findByEmail(email)
+
+        if (user != null) {
+            if (!user.enabled) {
+                throw ApiException.forbidden(user.disabledReason ?: "This account has been disabled by an administrator")
+            }
+            // Merge / link Google ID if not yet linked
+            if (user.googleId == null) {
+                user.googleId = info.googleId
+            }
+            user.emailVerified = true
+            user.updatedAt = Instant.now()
+            user.failedMfaAttempts = 0
+            user.mfaLockedUntil = null
+            user = userRepository.save(user)
+            log.info("User signed in via Google (merged/existing account): {}", email)
+        } else {
+            val displayName = info.name?.trim()?.take(60)?.ifBlank { null }
+                ?: email.substringBefore('@').take(60)
+
+            val newUser = User(
+                email = email,
+                passwordHash = passwordEncoder.encode(UUID.randomUUID().toString() + UUID.randomUUID().toString()),
+                displayName = displayName,
+                emailVerified = true,
+                googleId = info.googleId,
+                roles = mutableSetOf(Role.CUSTOMER),
+                locale = "nl",
+            )
+            user = userRepository.save(newUser)
+            log.info("New user registered via Google SSO: {}", email)
+        }
+
+        return issueTokens(user, httpRequest)
+    }
 
     /** Used to persist token-family revocation even when the request ends in an error. */
     private val requiresNew = TransactionTemplate(transactionManager).apply {

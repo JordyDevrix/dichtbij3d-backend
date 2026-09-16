@@ -57,6 +57,9 @@ class User(
     @Column(name = "email_verified", nullable = false)
     var emailVerified: Boolean = false,
 
+    @Column(name = "google_id", length = 100)
+    var googleId: String? = null,
+
     @Column(name = "totp_secret")
     var totpSecret: String? = null,
 

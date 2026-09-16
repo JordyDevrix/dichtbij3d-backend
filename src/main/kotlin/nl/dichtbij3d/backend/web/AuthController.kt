@@ -18,6 +18,13 @@ class AuthController(
     private val passkeyService: PasskeyService,
 ) {
 
+    @GetMapping("/config")
+    fun config(): AuthConfigResponse = authService.getAuthConfig()
+
+    @PostMapping("/google")
+    fun loginGoogle(@Valid @RequestBody request: GoogleLoginRequest, http: HttpServletRequest): AuthResponse =
+        authService.loginWithGoogle(request.idToken, http)
+
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
     fun register(@Valid @RequestBody request: RegisterRequest, http: HttpServletRequest): AuthResponse =
