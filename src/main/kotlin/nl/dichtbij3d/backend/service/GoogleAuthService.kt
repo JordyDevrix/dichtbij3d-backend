@@ -20,12 +20,26 @@ data class GoogleUserInfo(
 
 @Service
 class GoogleAuthService(
-    @Value("\${dichtbij3d.google.client-id:\${GOOGLE_OAUTH_CLIENT_ID:\${GOOGLE_CLIENT_ID:}}}")
-    private val rawClientId: String,
+    @Value("\${dichtbij3d.google.client-id:}")
+    private val rawClientId: String = "",
 ) {
     private val log = LoggerFactory.getLogger(GoogleAuthService::class.java)
-    val clientId: String? = rawClientId.trim().ifBlank { null }
+
+    val clientId: String? = rawClientId.trim().ifBlank {
+        System.getenv("GOOGLE_OAUTH_CLIENT_ID")?.trim()?.ifBlank { null }
+            ?: System.getenv("GOOGLE_CLIENT_ID")?.trim()?.ifBlank { null }
+            ?: System.getenv("DICHTBIJ3D_GOOGLE_CLIENT_ID")?.trim()?.ifBlank { null }
+    }
+
     val isEnabled: Boolean get() = clientId != null
+
+    init {
+        if (isEnabled) {
+            log.info("Google OAuth Service enabled with client ID: {}...", clientId?.take(16))
+        } else {
+            log.info("Google OAuth Service is disabled (no GOOGLE_OAUTH_CLIENT_ID configured)")
+        }
+    }
 
     private val verifier: GoogleIdTokenVerifier? by lazy {
         if (clientId == null) null
