@@ -333,7 +333,7 @@ class FileController(private val storage: StorageService) {
 
         // SEC-01: Prohibit direct public access to private/restricted folders like models/ and chat/
         val normalizedKey = if (key.startsWith("adverts/")) key.replaceFirst("adverts/", "listings/") else key
-        val allowedPublicPrefixes = listOf("avatars/", "listings/", "adverts/", "banner/", "announcements/", "thumbnails/", "public/")
+        val allowedPublicPrefixes = listOf("avatars/", "listings/", "adverts/", "banner/", "banners/", "announcements/", "thumbnails/", "public/")
         if (allowedPublicPrefixes.none { normalizedKey.startsWith(it) }) {
             throw ApiException.notFound("File")
         }
@@ -348,11 +348,16 @@ class FileController(private val storage: StorageService) {
             "svg" -> MediaType.parseMediaType("image/svg+xml")
             "heic" -> MediaType.parseMediaType("image/heic")
             "heif" -> MediaType.parseMediaType("image/heif")
+            "mp4", "m4v" -> MediaType.parseMediaType("video/mp4")
+            "webm" -> MediaType.parseMediaType("video/webm")
+            "mov" -> MediaType.parseMediaType("video/quicktime")
+            "ogg", "ogv" -> MediaType.parseMediaType("video/ogg")
             else -> MediaType.APPLICATION_OCTET_STREAM
         }
         val builder = ResponseEntity.ok()
             .contentType(contentType)
             .header("X-Content-Type-Options", "nosniff")
+            .header("Accept-Ranges", "bytes")
             .cacheControl(org.springframework.http.CacheControl.maxAge(java.time.Duration.ofDays(7)).cachePublic())
 
         // SEC-02: Protect against SVG XSS by setting a strict CSP and safe inline disposition

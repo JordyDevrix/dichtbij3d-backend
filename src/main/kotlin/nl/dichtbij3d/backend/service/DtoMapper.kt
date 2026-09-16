@@ -169,17 +169,53 @@ class DtoMapper(
         expectedLifetimeHours = printer.expectedLifetimeHours,
     )
 
-    fun banner(banner: PlatformBanner): PlatformBannerDto = PlatformBannerDto(
-        enabled = banner.enabled,
-        title = banner.title,
-        subtitle = banner.subtitle,
-        badgeText = banner.badgeText,
-        buttonText = banner.buttonText,
-        linkUrl = banner.linkUrl,
-        imageUrl = banner.imageUrl ?: storage.publicUrl(banner.imageKey),
-        imageKey = banner.imageKey,
-        updatedAt = banner.updatedAt,
-    )
+    fun banner(banner: PlatformBanner): PlatformBannerDto {
+        val mediaDtos = if (banner.media.isNotEmpty()) {
+            banner.media.map { m ->
+                PlatformBannerMediaDto(
+                    id = m.id,
+                    mediaType = m.mediaType,
+                    mediaUrl = if (m.mediaKey != null) (storage.publicUrl(m.mediaKey) ?: m.mediaUrl) else m.mediaUrl,
+                    mediaKey = m.mediaKey,
+                    durationSeconds = m.durationSeconds,
+                    sortOrder = m.sortOrder,
+                )
+            }
+        } else {
+            val fallbackUrl = banner.imageUrl ?: storage.publicUrl(banner.imageKey)
+            if (!fallbackUrl.isNullOrBlank()) {
+                listOf(
+                    PlatformBannerMediaDto(
+                        id = null,
+                        mediaType = BannerMediaType.IMAGE,
+                        mediaUrl = fallbackUrl,
+                        mediaKey = banner.imageKey,
+                        durationSeconds = 5,
+                        sortOrder = 0,
+                    )
+                )
+            } else {
+                emptyList()
+            }
+        }
+
+        val primaryImageUrl = mediaDtos.firstOrNull()?.mediaUrl ?: banner.imageUrl ?: storage.publicUrl(banner.imageKey)
+        val primaryImageKey = mediaDtos.firstOrNull()?.mediaKey ?: banner.imageKey
+
+        return PlatformBannerDto(
+            enabled = banner.enabled,
+            title = banner.title,
+            subtitle = banner.subtitle,
+            badgeText = banner.badgeText,
+            buttonText = banner.buttonText,
+            linkUrl = banner.linkUrl,
+            imageUrl = primaryImageUrl,
+            imageKey = primaryImageKey,
+            media = mediaDtos,
+            updatedAt = banner.updatedAt,
+        )
+    }
+
 
     fun announcement(a: PlatformAnnouncement): PlatformAnnouncementDto = PlatformAnnouncementDto(
         id = a.id!!,

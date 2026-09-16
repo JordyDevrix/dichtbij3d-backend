@@ -1,8 +1,10 @@
 package nl.dichtbij3d.backend.service
 
 import nl.dichtbij3d.backend.domain.AuditLogEntry
+import nl.dichtbij3d.backend.domain.BannerMediaType
 import nl.dichtbij3d.backend.domain.PlatformAnnouncement
 import nl.dichtbij3d.backend.domain.PlatformBanner
+import nl.dichtbij3d.backend.domain.PlatformBannerMedia
 import nl.dichtbij3d.backend.domain.PlatformSettings
 import nl.dichtbij3d.backend.dto.*
 import nl.dichtbij3d.backend.repo.AuditLogRepository
@@ -107,8 +109,46 @@ class PlatformService(
         banner.badgeText = request.badgeText?.trim()?.ifBlank { null }
         banner.buttonText = request.buttonText?.trim()?.ifBlank { null }
         banner.linkUrl = request.linkUrl?.trim()?.ifBlank { null }
-        banner.imageKey = request.imageKey?.trim()?.ifBlank { null }
-        banner.imageUrl = request.imageUrl?.trim()?.ifBlank { null }
+
+        if (request.media != null) {
+            banner.media.clear()
+            request.media.forEachIndexed { index, m ->
+                val trimmedUrl = m.mediaUrl.trim()
+                if (trimmedUrl.isNotBlank()) {
+                    banner.media.add(
+                        PlatformBannerMedia(
+                            id = m.id,
+                            banner = banner,
+                            mediaType = m.mediaType,
+                            mediaUrl = trimmedUrl,
+                            mediaKey = m.mediaKey?.trim()?.ifBlank { null },
+                            durationSeconds = if (m.durationSeconds > 0) m.durationSeconds else 5,
+                            sortOrder = if (m.sortOrder >= 0) m.sortOrder else index,
+                        )
+                    )
+                }
+            }
+            val firstMedia = banner.media.firstOrNull()
+            banner.imageKey = firstMedia?.mediaKey
+            banner.imageUrl = firstMedia?.mediaUrl
+        } else if (request.imageUrl != null || request.imageKey != null) {
+            banner.imageKey = request.imageKey?.trim()?.ifBlank { null }
+            banner.imageUrl = request.imageUrl?.trim()?.ifBlank { null }
+            banner.media.clear()
+            val url = banner.imageUrl ?: banner.imageKey?.let { "/api/files/$it" }
+            if (!url.isNullOrBlank()) {
+                banner.media.add(
+                    PlatformBannerMedia(
+                        banner = banner,
+                        mediaType = BannerMediaType.IMAGE,
+                        mediaUrl = url,
+                        mediaKey = banner.imageKey,
+                        durationSeconds = 5,
+                        sortOrder = 0,
+                    )
+                )
+            }
+        }
         banner.updatedAt = Instant.now()
         val saved = bannerRepository.save(banner)
 
@@ -118,11 +158,12 @@ class PlatformService(
                 action = "BANNER_UPDATED",
                 targetType = "PLATFORM_BANNER",
                 targetId = bannerId,
-                detail = "enabled=${saved.enabled}, title=${saved.title}",
+                detail = "enabled=${saved.enabled}, title=${saved.title}, mediaCount=${saved.media.size}",
             )
         )
         return mapper.banner(saved)
     }
+
 
     @Transactional(readOnly = true)
     fun getActiveAnnouncements(): List<PlatformAnnouncementDto> =

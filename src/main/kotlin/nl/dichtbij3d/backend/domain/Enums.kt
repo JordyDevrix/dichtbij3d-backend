@@ -140,3 +140,5 @@ enum class ParticipantStatus { INVITED, JOINED, DECLINED }
 
 enum class AnnouncementType { INFO, EVENT, UPDATE, WARNING }
 
+enum class BannerMediaType { IMAGE, VIDEO }
+

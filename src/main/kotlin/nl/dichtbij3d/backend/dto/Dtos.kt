@@ -621,6 +621,24 @@ data class AdvertListCreateRequest(
 
 // ---------------------------------------------------------------- platform banner & announcements
 
+data class PlatformBannerMediaDto(
+    val id: UUID?,
+    val mediaType: BannerMediaType,
+    val mediaUrl: String,
+    val mediaKey: String?,
+    val durationSeconds: Int,
+    val sortOrder: Int,
+)
+
+data class PlatformBannerMediaUpdateRequest(
+    val id: UUID? = null,
+    val mediaType: BannerMediaType = BannerMediaType.IMAGE,
+    val mediaUrl: String,
+    val mediaKey: String? = null,
+    val durationSeconds: Int = 5,
+    val sortOrder: Int = 0,
+)
+
 data class PlatformBannerDto(
     val enabled: Boolean,
     val title: String,
@@ -630,6 +648,7 @@ data class PlatformBannerDto(
     val linkUrl: String?,
     val imageUrl: String?,
     val imageKey: String?,
+    val media: List<PlatformBannerMediaDto> = emptyList(),
     val updatedAt: Instant,
 )
 
@@ -642,6 +661,7 @@ data class PlatformBannerUpdateRequest(
     val linkUrl: String? = null,
     val imageKey: String? = null,
     val imageUrl: String? = null,
+    val media: List<PlatformBannerMediaUpdateRequest>? = null,
 )
 
 data class PlatformAnnouncementDto(

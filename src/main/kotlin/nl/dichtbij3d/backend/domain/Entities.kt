@@ -983,9 +983,46 @@ class PlatformBanner(
     @Column(name = "image_url", columnDefinition = "text")
     var imageUrl: String? = null,
 
+    @OneToMany(mappedBy = "banner", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
+    @OrderBy("sortOrder ASC")
+    var media: MutableList<PlatformBannerMedia> = mutableListOf(),
+
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now(),
 )
+
+@Entity
+@Table(name = "platform_banner_media")
+class PlatformBannerMedia(
+    @Id
+    @GeneratedValue
+    @Column(columnDefinition = "uuid")
+    var id: UUID? = null,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "banner_id")
+    var banner: PlatformBanner,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "media_type", nullable = false, length = 20)
+    var mediaType: BannerMediaType = BannerMediaType.IMAGE,
+
+    @Column(name = "media_url", nullable = false, columnDefinition = "text")
+    var mediaUrl: String = "",
+
+    @Column(name = "media_key", columnDefinition = "text")
+    var mediaKey: String? = null,
+
+    @Column(name = "duration_seconds", nullable = false)
+    var durationSeconds: Int = 5,
+
+    @Column(name = "sort_order", nullable = false)
+    var sortOrder: Int = 0,
+
+    @Column(name = "created_at", nullable = false)
+    var createdAt: Instant = Instant.now(),
+)
+
 
 @Entity
 @Table(name = "platform_announcements")
