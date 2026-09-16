@@ -133,7 +133,6 @@ class StorageService(private val props: StorageProperties) {
         return stream.use { it.readBytes() }
     }
 
-
     fun delete(key: String) {
         try {
             val minio = client
@@ -150,7 +149,7 @@ class StorageService(private val props: StorageProperties) {
     /** Public URL served by this service (keeps auth/CORS simple, works for MinIO and disk alike). */
     fun publicUrl(key: String?): String? = key?.let {
         val safeKey = if (it.startsWith("adverts/")) it.replaceFirst("adverts/", "listings/") else it
-        val allowedPrefixes = listOf("avatars/", "listings/", "adverts/", "banner/", "announcements/", "thumbnails/", "public/")
+        val allowedPrefixes = listOf("avatars/", "listings/", "adverts/", "banner/", "banners/", "announcements/", "thumbnails/", "public/")
         if (allowedPrefixes.any { prefix -> safeKey.startsWith(prefix) }) {
             "/api/files/$safeKey"
         } else {

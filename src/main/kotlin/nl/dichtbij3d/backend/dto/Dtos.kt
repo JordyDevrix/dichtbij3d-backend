@@ -618,7 +618,6 @@ data class AdvertListDto(
 data class AdvertListCreateRequest(
     @field:NotBlank @field:Size(min = 1, max = 100) val name: String,
 )
-
 // ---------------------------------------------------------------- platform banner & announcements
 
 data class PlatformBannerDto(
@@ -684,3 +683,62 @@ data class MaintenanceUpdateRequest(
     val until: Instant? = null,
 )
 
+// ---------------------------------------------------------------- hero banners
+
+data class HeroBannerDto(
+    val id: UUID,
+    val title: String?,
+    val subtitle: String?,
+    val mediaUrl: String,
+    val mediaType: BannerMediaType,
+    val durationSeconds: Int?,
+    val linkUrl: String?,
+    val linkText: String?,
+    val sortOrder: Int,
+    val enabled: Boolean,
+    val createdAt: Instant,
+    val updatedAt: Instant,
+)
+
+data class HeroBannerSettingsDto(
+    val slideDurationSeconds: Int,
+    val showForLoggedInUsers: Boolean,
+)
+
+data class PublicBannersResponse(
+    val banners: List<HeroBannerDto>,
+    val settings: HeroBannerSettingsDto,
+)
+
+data class HeroBannerCreateRequest(
+    val title: String? = null,
+    val subtitle: String? = null,
+    @field:NotBlank val mediaUrl: String,
+    val mediaType: BannerMediaType? = null,
+    @field:Min(1) @field:Max(300) val durationSeconds: Int? = null,
+    val linkUrl: String? = null,
+    val linkText: String? = null,
+    val sortOrder: Int? = null,
+    val enabled: Boolean? = null,
+)
+
+data class HeroBannerUpdateRequest(
+    val title: String? = null,
+    val subtitle: String? = null,
+    val mediaUrl: String? = null,
+    val mediaType: BannerMediaType? = null,
+    @field:Min(1) @field:Max(300) val durationSeconds: Int? = null,
+    val linkUrl: String? = null,
+    val linkText: String? = null,
+    val sortOrder: Int? = null,
+    val enabled: Boolean? = null,
+)
+
+data class HeroBannerReorderRequest(
+    val bannerIds: List<UUID>,
+)
+
+data class HeroBannerSettingsUpdateRequest(
+    @field:Min(1) @field:Max(120) val slideDurationSeconds: Int? = null,
+    val showForLoggedInUsers: Boolean? = null,
+)

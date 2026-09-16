@@ -348,12 +348,18 @@ class FileController(private val storage: StorageService) {
             "svg" -> MediaType.parseMediaType("image/svg+xml")
             "heic" -> MediaType.parseMediaType("image/heic")
             "heif" -> MediaType.parseMediaType("image/heif")
+            "mp4" -> MediaType.parseMediaType("video/mp4")
+            "webm" -> MediaType.parseMediaType("video/webm")
+            "mov" -> MediaType.parseMediaType("video/quicktime")
+            "ogg", "ogv" -> MediaType.parseMediaType("video/ogg")
+            "m4v" -> MediaType.parseMediaType("video/x-m4v")
             else -> MediaType.APPLICATION_OCTET_STREAM
         }
         val builder = ResponseEntity.ok()
             .contentType(contentType)
             .header("X-Content-Type-Options", "nosniff")
             .cacheControl(org.springframework.http.CacheControl.maxAge(java.time.Duration.ofDays(7)).cachePublic())
+            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
 
         // SEC-02: Protect against SVG XSS by setting a strict CSP and safe inline disposition
         if (ext == "svg" || contentType == MediaType.parseMediaType("image/svg+xml")) {
