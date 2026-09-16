@@ -45,50 +45,42 @@ class EmailService(
      * Dispatches a password reset email to the user.
      */
     fun sendPasswordResetEmail(toEmail: String, displayName: String, resetUrl: String, locale: String = "nl") {
-        if (!isMailConfigured()) {
-            log.warn(
-                "[SMTP not configured] Password reset email requested for '{}' ({}) but mail delivery is not configured.",
-                displayName,
-                toEmail,
-            )
-            return
-        }
-
-        val sender = mailSender!!
-        sanitizeSender(sender)
-
-        try {
-            val message = sender.createMimeMessage()
-            val helper = MimeMessageHelper(message, true, "UTF-8")
-
-            helper.setFrom(InternetAddress(props.from, props.fromName, "UTF-8"))
-            helper.setTo(toEmail)
-            helper.setSubject(resolveSubject(locale))
-
-            val htmlBody = buildHtmlTemplate(displayName, resetUrl, locale)
-            val textBody = buildTextTemplate(displayName, resetUrl, locale)
-
-            helper.setText(textBody, htmlBody)
-
-            sender.send(message)
-            log.info("Password reset email successfully sent from {} to {}", props.from, toEmail)
-        } catch (ex: Exception) {
-            log.error(
-                "Failed to send password reset email to {}: {}",
-                toEmail,
-                ex.message,
-                ex,
-            )
-        }
+        sendEmailMessage(
+            toEmail = toEmail,
+            displayName = displayName,
+            subject = resolveSubject(locale),
+            htmlBody = buildHtmlTemplate(displayName, resetUrl, locale),
+            textBody = buildTextTemplate(displayName, resetUrl, locale),
+            logLabel = "Password reset email",
+        )
     }
 
     /**
      * Dispatches a two-factor authentication (MFA) verification code to the user's email.
      */
     fun sendMfaCodeEmail(toEmail: String, displayName: String, code: String, locale: String = "nl") {
+        sendEmailMessage(
+            toEmail = toEmail,
+            displayName = displayName,
+            subject = resolveMfaSubject(locale, code),
+            htmlBody = buildMfaHtmlTemplate(displayName, code, locale),
+            textBody = buildMfaTextTemplate(displayName, code, locale),
+            logLabel = "MFA verification code email",
+        )
+    }
+
+    private fun sendEmailMessage(
+        toEmail: String,
+        displayName: String,
+        subject: String,
+        htmlBody: String,
+        textBody: String,
+        logLabel: String,
+    ) {
         if (!isMailConfigured()) {
             log.warn(
-                "[SMTP not configured] MFA verification code requested for '{}' ({}) but mail delivery is not configured.",
+                "[SMTP not configured] {} requested for '{}' ({}) but mail delivery is not configured.",
+                logLabel,
                 displayName,
                 toEmail,
             )
@@ -104,18 +96,15 @@ class EmailService(
 
             helper.setFrom(InternetAddress(props.from, props.fromName, "UTF-8"))
             helper.setTo(toEmail)
-            helper.setSubject(resolveMfaSubject(locale, code))
-
-            val htmlBody = buildMfaHtmlTemplate(displayName, code, locale)
-            val textBody = buildMfaTextTemplate(displayName, code, locale)
-
+            helper.setSubject(subject)
             helper.setText(textBody, htmlBody)
 
             sender.send(message)
-            log.info("MFA verification code email successfully sent from {} to {}", props.from, toEmail)
+            log.info("{} successfully sent from {} to {}", logLabel, props.from, toEmail)
         } catch (ex: Exception) {
             log.error(
-                "Failed to send MFA email to {}: {}",
+                "Failed to send {} to {}: {}",
+                logLabel,
                 toEmail,
                 ex.message,
                 ex,
