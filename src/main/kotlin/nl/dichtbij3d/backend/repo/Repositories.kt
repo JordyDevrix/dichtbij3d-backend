@@ -417,11 +417,3 @@ interface PlatformAnnouncementRepository : JpaRepository<PlatformAnnouncement, U
 @Repository
 interface PlatformSettingsRepository : JpaRepository<PlatformSettings, UUID>
 
-@Repository
-interface HeroBannerRepository : JpaRepository<HeroBanner, UUID> {
-    fun findByEnabledTrueOrderBySortOrderAscCreatedAtAsc(): List<HeroBanner>
-    fun findAllByOrderBySortOrderAscCreatedAtAsc(): List<HeroBanner>
-}
-
-@Repository
-interface HeroBannerSettingsRepository : JpaRepository<HeroBannerSettings, Int>

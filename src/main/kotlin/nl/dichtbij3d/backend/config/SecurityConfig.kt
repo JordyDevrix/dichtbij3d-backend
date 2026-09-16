@@ -59,7 +59,6 @@ class SecurityConfig(
                     "/api/public/**",
                     "/api/share/**",
                     "/api/files/**",
-                    "/api/banners/**",
                     "/actuator/health",
                     "/actuator/info",
                     "/v3/api-docs/**",

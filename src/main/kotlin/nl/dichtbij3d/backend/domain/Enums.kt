@@ -43,8 +43,6 @@ enum class ModelVisibility { PUBLIC, UNLISTED, PRIVATE }
 
 enum class ModelLicense { CC0, CC_BY, CC_BY_NC, CC_BY_SA, COMMERCIAL, ALL_RIGHTS_RESERVED }
 
-enum class BannerMediaType { IMAGE, VIDEO }
-
 /**
  * Fixed platform taxonomy. Categories are deliberately not user-made: they are
  * what the marketplace filters and searches on, for prints as well as models.

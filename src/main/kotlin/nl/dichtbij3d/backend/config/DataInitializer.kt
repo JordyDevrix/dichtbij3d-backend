@@ -22,7 +22,6 @@ class DataInitializer(
     private val advertRepository: AdvertRepository,
     private val tagRepository: TagRepository,
     private val modelRepository: Model3dRepository,
-    private val heroBannerRepository: HeroBannerRepository,
     private val passwordEncoder: PasswordEncoder,
     private val adminProperties: AdminProperties,
     private val demoProperties: DemoDataProperties,
@@ -36,33 +35,6 @@ class DataInitializer(
     fun bootstrap() {
         ensureAdmin()
         if (demoProperties.enabled && advertRepository.count() == 0L) seedDemoContent()
-        if (demoProperties.enabled && heroBannerRepository.count() == 0L) seedDemoBanners()
-    }
-
-    private fun seedDemoBanners() {
-        heroBannerRepository.save(
-            HeroBanner(
-                title = "Laat het dichtbij printen",
-                subtitle = "Vind een printservice in je buurt, vraag een print aan of verkoop je eigen modellen en prints.",
-                mediaUrl = "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=1200&q=80",
-                mediaType = BannerMediaType.IMAGE,
-                durationSeconds = 6,
-                sortOrder = 0,
-                enabled = true,
-            )
-        )
-        heroBannerRepository.save(
-            HeroBanner(
-                title = "Prototypes & Unieke Modellen",
-                subtitle = "Verbind direct met lokale makers en 3D-modelleurs zonder dure tussenpersonen.",
-                mediaUrl = "https://images.unsplash.com/photo-1615840287214-7ff58936c4cf?auto=format&fit=crop&w=1200&q=80",
-                mediaType = BannerMediaType.IMAGE,
-                durationSeconds = 6,
-                sortOrder = 1,
-                enabled = true,
-            )
-        )
-        log.info("Demo hero banners seeded.")
     }
 
     private fun ensureAdmin() {
