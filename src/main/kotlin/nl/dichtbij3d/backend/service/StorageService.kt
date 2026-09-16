@@ -32,7 +32,11 @@ class StorageService(private val props: StorageProperties) {
 
     @PostConstruct
     fun init() {
-        Files.createDirectories(fallbackRoot)
+        try {
+            Files.createDirectories(fallbackRoot)
+        } catch (ex: Throwable) {
+            log.warn("Could not create fallback directory {}: {}", fallbackRoot, ex.message)
+        }
         try {
             val candidate = MinioClient.builder()
                 .endpoint(props.endpoint)
@@ -44,7 +48,7 @@ class StorageService(private val props: StorageProperties) {
             }
             client = candidate
             log.info("Blob storage: MinIO at {} (bucket '{}')", props.endpoint, props.bucket)
-        } catch (ex: Exception) {
+        } catch (ex: Throwable) {
             log.warn(
                 "MinIO unavailable ({}), falling back to local disk storage at {}",
                 ex.message,
