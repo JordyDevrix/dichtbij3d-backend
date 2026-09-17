@@ -121,6 +121,7 @@ data class UserProfileDto(
     val emailMfaEnabled: Boolean = false,
     val passkeyCount: Int = 0,
     val createdAt: Instant? = null,
+    val hasPassword: Boolean = true,
 )
 
 data class PublicUserDto(
@@ -146,6 +147,11 @@ data class UpdateProfileRequest(
     val locale: String? = null,
     val roles: Set<Role>? = null,
     val mutedNotifications: Set<NotificationType>? = null,
+)
+
+data class DeleteAccountRequest(
+    val password: String? = null,
+    @field:Size(max = 500) val reason: String? = null,
 )
 
 // ---------------------------------------------------------------- tags

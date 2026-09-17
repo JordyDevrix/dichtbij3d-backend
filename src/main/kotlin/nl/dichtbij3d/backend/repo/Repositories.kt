@@ -119,6 +119,10 @@ interface PasskeyCredentialRepository : JpaRepository<PasskeyCredential, UUID> {
     fun findByCredentialId(credentialId: String): PasskeyCredential?
     fun findAllByUserId(userId: UUID): List<PasskeyCredential>
     fun countByUserId(userId: UUID): Long
+
+    @Modifying
+    @Query("delete from PasskeyCredential p where p.userId = :userId")
+    fun deleteAllByUserId(@Param("userId") userId: UUID)
 }
 
 @Repository
@@ -160,6 +164,8 @@ interface AdvertRepository : JpaRepository<Advert, UUID>, JpaSpecificationExecut
     fun totalViews(): Long
 
     fun findAllByAuthorIdAndDeletedAtIsNullOrderByCreatedAtDesc(authorId: UUID, pageable: Pageable): Page<Advert>
+
+    fun findAllByAuthorIdAndDeletedAtIsNull(authorId: UUID): List<Advert>
 
     fun findAllByModelIdAndDeletedAtIsNull(modelId: UUID): List<Advert>
 

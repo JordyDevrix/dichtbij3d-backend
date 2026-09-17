@@ -2,11 +2,12 @@ package nl.dichtbij3d.backend.web
 
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
+import nl.dichtbij3d.backend.domain.AdvertStatus
+import nl.dichtbij3d.backend.domain.AuditLogEntry
 import nl.dichtbij3d.backend.domain.Category
 import nl.dichtbij3d.backend.domain.Role
 import nl.dichtbij3d.backend.dto.*
-import nl.dichtbij3d.backend.repo.TagRepository
-import nl.dichtbij3d.backend.repo.UserRepository
+import nl.dichtbij3d.backend.repo.*
 import nl.dichtbij3d.backend.security.AppPrincipal
 import nl.dichtbij3d.backend.service.*
 import org.springframework.core.io.InputStreamResource
@@ -16,9 +17,11 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
+import java.time.Instant
 import java.util.UUID
 
 // ---------------------------------------------------------------- users
@@ -30,6 +33,11 @@ class UserController(
     private val storage: StorageService,
     private val blockService: BlockService,
     private val mapper: DtoMapper,
+    private val passwordEncoder: PasswordEncoder,
+    private val refreshTokenRepository: RefreshTokenRepository,
+    private val passkeyRepository: PasskeyCredentialRepository,
+    private val advertRepository: AdvertRepository,
+    private val auditLogRepository: AuditLogRepository,
 ) {
 
     @GetMapping
@@ -100,6 +108,87 @@ class UserController(
         user.avatarKey?.let(storage::delete)
         user.avatarKey = storage.store(file, "avatars").key
         return mapper.profile(userRepository.save(user))
+    }
+
+    @DeleteMapping("/me")
+    @Transactional
+    fun deleteMe(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @Valid @RequestBody(required = false) request: DeleteAccountRequest?,
+    ): MessageResponse {
+        val user = userRepository.findById(principal.id).orElseThrow { ApiException.notFound("User") }
+        if (user.deletedAt != null) throw ApiException.notFound("User")
+
+        if (user.googleId == null) {
+            val rawPassword = request?.password?.trim()
+            if (rawPassword.isNullOrBlank()) {
+                throw ApiException.badRequest("Password is required to delete your account")
+            }
+            if (!passwordEncoder.matches(rawPassword, user.passwordHash)) {
+                throw ApiException.badRequest("Incorrect password")
+            }
+        }
+
+        user.avatarKey?.let { key ->
+            try {
+                storage.delete(key)
+            } catch (_: Exception) {
+                // storage deletion failure should not block account erasure
+            }
+            user.avatarKey = null
+        }
+
+        val now = Instant.now()
+        val userId = user.id!!
+
+        refreshTokenRepository.revokeAllForUser(userId, now)
+        passkeyRepository.deleteAllByUserId(userId)
+
+        val userAdverts = advertRepository.findAllByAuthorIdAndDeletedAtIsNull(userId)
+        userAdverts.forEach { advert ->
+            advert.deletedAt = now
+            advert.deletedBy = userId
+            advert.deletedReason = "Account deleted"
+            advert.status = AdvertStatus.CANCELLED
+        }
+        if (userAdverts.isNotEmpty()) {
+            advertRepository.saveAll(userAdverts)
+        }
+
+        auditLogRepository.save(
+            AuditLogEntry(
+                actorId = userId,
+                action = "USER_DELETE_SELF",
+                targetType = "USER",
+                targetId = userId,
+                detail = request?.reason?.trim()?.takeIf { it.isNotBlank() } ?: "Account self-deleted",
+                createdAt = now,
+            )
+        )
+
+        user.email = "deleted-$userId@dichtbij3d.invalid"
+        user.passwordHash = ""
+        user.displayName = "Verwijderde gebruiker"
+        user.bio = null
+        user.contactEmail = null
+        user.contactPhone = null
+        user.website = null
+        user.city = null
+        user.googleId = null
+        user.totpSecret = null
+        user.totpEnabled = false
+        user.lastTotpStep = null
+        user.emailMfaEnabled = false
+        user.failedMfaAttempts = 0
+        user.mfaLockedUntil = null
+        user.roles.clear()
+        user.mutedNotifications.clear()
+        user.enabled = false
+        user.disabledReason = request?.reason?.trim()?.takeIf { it.isNotBlank() } ?: "Account deleted by user"
+        user.deletedAt = now
+        userRepository.save(user)
+
+        return MessageResponse("Account successfully deleted")
     }
 
     @GetMapping("/blocks")

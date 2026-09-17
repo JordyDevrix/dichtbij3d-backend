@@ -58,6 +58,7 @@ class DtoMapper(
         emailMfaEnabled = user.emailMfaEnabled,
         passkeyCount = passkeyRepository.countByUserId(user.id!!).toInt(),
         createdAt = user.createdAt,
+        hasPassword = user.googleId == null,
     )
 
     fun advertList(list: AdvertList): AdvertListDto = AdvertListDto(
